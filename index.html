@@ -1,0 +1,2442 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>班級作業與訂正追蹤系統</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide Icons 圖示庫 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 引入 SheetJS 用於匯出多工作表 Excel (.xlsx) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <!-- 引入 Google Fonts (Noto Sans TC 與 Inter) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 自訂微互動過渡 - 莫蘭迪高級灰調質感 */
+        body {
+            background-color: #f2efe9;
+            color: #46433e;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .seat-btn {
+            transition: all 0.14s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+        }
+        .seat-btn:active {
+            transform: scale(0.94);
+        }
+        /* 大字報模式全螢幕樣式 */
+        :fullscreen {
+            background-color: #f4ebe9;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#F2EFE9] text-[#46433E]">
+
+    <!-- 頂部導覽列與狀態圖例 -->
+    <header class="bg-[#FAF8F5]/95 backdrop-blur-xs border-b border-[#DDD8CE] sticky top-0 z-30 shadow-2xs">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                
+                <!-- 系統標題與今日基準日控制 -->
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-10 h-10 rounded-xl bg-[#6B7E8C] text-[#FAF8F5] flex items-center justify-center shadow-sm shadow-[#6B7E8C]/20">
+                            <i data-lucide="clipboard-check" class="w-6 h-6"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-xl sm:text-2xl font-extrabold text-[#3E3B36] tracking-tight">班級作業與訂正追蹤</h1>
+                            <p class="text-xs text-[#7D786F] hidden sm:block">點擊座號方格或作業標籤切換狀態，自動記錄繳交與完成時間</p>
+                        </div>
+                    </div>
+
+                    <!-- 今日基準日期選擇器 -->
+                    <div class="flex items-center gap-2 bg-[#EAE6DD] px-3 py-1.5 rounded-xl border border-[#D8D2C6]">
+                        <i data-lucide="calendar" class="w-4 h-4 text-[#6B7E8C]"></i>
+                        <label for="currentDateInput" class="text-xs font-bold text-[#5C574F] whitespace-nowrap">基準日：</label>
+                        <input type="date" id="currentDateInput" class="bg-transparent text-sm font-bold text-[#3E3B36] focus:outline-none cursor-pointer">
+                        <button id="resetTodayBtn" title="重設為系統今日" class="text-xs bg-[#FAF8F5] hover:bg-[#E3E7EA] text-[#556774] font-medium px-2 py-0.5 rounded-lg border border-[#D2CCC0] transition">
+                            今天
+                        </button>
+                    </div>
+
+                    <!-- 雲端同步狀態指示 -->
+                    <div id="cloudSyncBadge" onclick="openSettingsModal()" title="點擊管理跨設備雲端同步代碼" class="cursor-pointer flex items-center gap-1.5 bg-[#E6E9EC] hover:bg-[#DCE1E5] px-3 py-1.5 rounded-xl border border-[#CBD2D7] transition">
+                        <span id="cloudStatusDot" class="w-2 h-2 rounded-full bg-[#C3A373] animate-pulse"></span>
+                        <span id="cloudStatusText" class="text-xs font-bold text-[#4F616E] whitespace-nowrap">雲端連線中...</span>
+                    </div>
+                </div>
+
+                <!-- 狀態圖例、匯出 Excel 與座號管理按鈕 -->
+                <div class="flex flex-wrap items-center justify-between lg:justify-end gap-2 sm:gap-2.5 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#E5E0D6]">
+                    <!-- 四大狀態圖例（提升飽和度與辨識度） -->
+                    <div class="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#E4E0D8] text-[#4E4A43] border border-[#C6C0B4]">
+                            <span class="w-2.5 h-2.5 rounded-full bg-[#7A746B]"></span>未交
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F9E3B4] text-[#7D5718] border border-[#E6C17A]">
+                            <span class="w-2.5 h-2.5 rounded-full bg-[#D99B26]"></span>待訂正
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#CBE4D1] text-[#2F5D3D] border border-[#96C2A2]">
+                            <span class="w-2.5 h-2.5 rounded-full bg-[#4D8B62]"></span>完成
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F6D0CE] text-[#8F2D2A] border border-[#E09B97]">
+                            <span class="w-2.5 h-2.5 rounded-full bg-[#C94A46]"></span>逾期未交 / 逾期待訂正
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <!-- 查詢時間記錄按鈕 -->
+                        <button onclick="openGlobalTimeLogModal()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#DCE6EE] hover:bg-[#CEDCE7] text-[#335269] border border-[#B2C6D6] text-xs sm:text-sm font-bold shadow-2xs transition">
+                            <i data-lucide="clock" class="w-4 h-4"></i>
+                            <span>查詢時間記錄</span>
+                        </button>
+
+                        <!-- 匯出 Excel 按鈕 -->
+                        <button onclick="openExportExcelModal()" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#4D8B62] hover:bg-[#3F7752] text-[#FAF8F5] text-xs sm:text-sm font-bold shadow-2xs transition">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+                            <span>匯出 Excel (.xlsx)</span>
+                        </button>
+
+                        <!-- 座號與資料設定按鈕 -->
+                        <button id="openSettingsModalBtn" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#524E47] border border-[#D8D2C6] text-xs sm:text-sm font-bold transition">
+                            <i data-lucide="users-round" class="w-4 h-4"></i>
+                            <span>座號與資料管理</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 三大核心檢視分頁 (Tabs) 與主要操作列 -->
+            <div class="mt-3 pt-2 border-t border-[#E5E0D6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <!-- 分頁切換按鈕 -->
+                <nav class="flex bg-[#EAE6DD] p-1 rounded-2xl w-full sm:w-auto border border-[#DDD7CB]" role="tablist">
+                    <button id="tab-assignments" onclick="switchTab('assignments')" class="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition bg-[#FAF8F5] text-[#556774] shadow-2xs">
+                        <i data-lucide="layout-grid" class="w-4 h-4"></i>
+                        <span>項目呈現</span>
+                    </button>
+                    <button id="tab-seats" onclick="switchTab('seats')" class="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition text-[#6F6A61] hover:text-[#3E3B36]">
+                        <i data-lucide="table-2" class="w-4 h-4"></i>
+                        <span>座號呈現（表格統計）</span>
+                    </button>
+                    <button id="tab-poster" onclick="switchTab('poster')" class="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition text-[#9E3532] hover:bg-[#F7DCD9]">
+                        <i data-lucide="megaphone" class="w-4 h-4"></i>
+                        <span>大字報模式</span>
+                        <span id="overdueBadgeCount" class="ml-0.5 px-1.5 py-0.2 text-xs rounded-full bg-[#C94A46] text-[#FAF8F5] font-extrabold hidden">0</span>
+                    </button>
+                </nav>
+
+                <!-- 動態工具列 -->
+                <div id="toolbarActions" class="flex flex-wrap items-center justify-end gap-2">
+                    <!-- 由 JS 動態渲染 -->
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main id="mainContainer" class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- 內容將由 JavaScript 動態渲染 -->
+    </main>
+
+    <!-- 頁尾資訊 -->
+    <footer class="bg-[#FAF8F5]/80 border-t border-[#DDD8CE] py-4 text-center text-xs text-[#88837A]">
+        所有狀態與繳交／完成時間紀錄皆已整合雲端即時同步，支援跨設備操作與一鍵匯出 Excel (.xlsx) 報表。
+    </footer>
+
+    <!-- ==================== 彈跳視窗 (Modals) ==================== -->
+
+    <!-- 1. 新增 / 編輯作業 Modal -->
+    <div id="assignmentModal" class="fixed inset-0 bg-[#322F2B]/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#FAF8F5] rounded-3xl shadow-xl max-w-md w-full p-6 border border-[#DDD8CE] transform transition-all">
+            <div class="flex items-center justify-between pb-3 border-b border-[#E5E0D6]">
+                <h3 id="assignmentModalTitle" class="text-xl font-extrabold text-[#3E3B36]">新增作業項目</h3>
+                <button onclick="closeAssignmentModal()" class="w-8 h-8 rounded-full bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#6F6A61] flex items-center justify-center transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <form id="assignmentForm" class="mt-4 space-y-4">
+                <input type="hidden" id="editAssignmentId">
+                <div>
+                    <label for="assignmentTitleInput" class="block text-sm font-bold text-[#524E47] mb-1">作業名稱 <span class="text-[#B56C6A]">*</span></label>
+                    <input type="text" id="assignmentTitleInput" required placeholder="例如：國語習作第 5 課、數學習作 P.32" 
+                           class="w-full px-4 py-2.5 rounded-xl bg-white border border-[#D2CCC0] focus:border-[#6B7E8C] focus:ring-2 focus:ring-[#6B7E8C]/20 outline-none font-medium text-[#3E3B36]">
+                </div>
+                <div>
+                    <label for="assignmentDueDateInput" class="block text-sm font-bold text-[#524E47] mb-1">繳交期限 (截止日) <span class="text-[#B56C6A]">*</span></label>
+                    <input type="date" id="assignmentDueDateInput" required 
+                           class="w-full px-4 py-2.5 rounded-xl bg-white border border-[#D2CCC0] focus:border-[#6B7E8C] focus:ring-2 focus:ring-[#6B7E8C]/20 outline-none font-medium text-[#3E3B36]">
+                    <p class="text-xs text-[#7D786F] mt-1.5 flex items-center gap-1">
+                        <i data-lucide="info" class="w-3.5 h-3.5 text-[#6B7E8C] shrink-0"></i>
+                        <span>超過此日期且尚未「完成」的座號，系統將自動標示為莫蘭迪乾燥玫瑰紅「逾期未完成」。</span>
+                    </p>
+                </div>
+                <div class="pt-3 flex items-center justify-end gap-2 border-t border-[#E5E0D6]">
+                    <button type="button" onclick="closeAssignmentModal()" class="px-4 py-2.5 rounded-xl bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#5C574F] font-bold text-sm transition">
+                        取消
+                    </button>
+                    <button type="submit" class="px-5 py-2.5 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] font-bold text-sm shadow-sm transition">
+                        儲存作業
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. 繳交時間與完成時間檢視與手動編輯 Modal -->
+    <div id="timeLogModal" class="fixed inset-0 bg-[#322F2B]/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#FAF8F5] rounded-3xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col border border-[#DDD8CE]">
+            <div class="flex items-center justify-between p-5 border-b border-[#E5E0D6]">
+                <div>
+                    <h3 id="timeLogModalTitle" class="text-lg sm:text-xl font-extrabold text-[#3E3B36] flex items-center gap-2">
+                        <i data-lucide="clock" class="w-5 h-5 text-[#6B7E8C]"></i>
+                        <span>繳交與完成時間明細</span>
+                    </h3>
+                    <p id="timeLogModalSubtitle" class="text-xs text-[#7D786F] mt-0.5"></p>
+                </div>
+                <button onclick="closeTimeLogModal()" class="w-8 h-8 rounded-full bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#6F6A61] flex items-center justify-center transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <!-- 快速切換檢視作業或座號 -->
+            <div id="timeLogFilterBar" class="px-5 py-3 bg-[#EFECE5] border-b border-[#E5E0D6] flex flex-wrap items-center gap-2 text-xs">
+                <!-- 由 JS 動態渲染切換下拉選單 -->
+            </div>
+            
+            <div id="timeLogModalBody" class="p-4 sm:p-5 overflow-y-auto space-y-2.5 flex-1">
+                <!-- 由 JS 動態渲染每一筆紀錄的時間編輯器 -->
+            </div>
+
+            <div class="p-4 border-t border-[#E5E0D6] flex items-center justify-between bg-[#EFECE5] rounded-b-3xl">
+                <span class="text-xs text-[#7D786F]">修改時間後將即時自動儲存</span>
+                <button onclick="closeTimeLogModal()" class="px-5 py-2 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] font-bold text-sm shadow-2xs transition">
+                    完成關閉
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 刪除作業確認 Modal -->
+    <div id="deleteConfirmModal" class="fixed inset-0 bg-[#322F2B]/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#FAF8F5] rounded-3xl shadow-xl max-w-sm w-full p-6 border border-[#DDD8CE] text-center">
+            <div class="w-14 h-14 rounded-full bg-[#EEDBDC] text-[#8F504E] flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="trash-2" class="w-7 h-7"></i>
+            </div>
+            <h3 class="text-lg font-extrabold text-[#3E3B36] mb-2">確定要移除此項作業嗎？</h3>
+            <p id="deleteTargetName" class="text-sm font-bold text-[#7D4543] bg-[#EEDBDC] py-1.5 px-3 rounded-xl mb-3"></p>
+            <p class="text-xs text-[#7D786F] mb-6">移除後將不再顯示於主看板，但該作業的所有學生狀態與繳交／完成時間紀錄仍會完整封存於雲端「已刪除作業留存紀錄」中，可隨時查閱或還原。</p>
+            <div class="flex items-center justify-center gap-3">
+                <button onclick="closeDeleteModal()" class="flex-1 py-2.5 rounded-xl bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#5C574F] font-bold text-sm transition">
+                    取消
+                </button>
+                <button id="confirmDeleteBtn" class="flex-1 py-2.5 rounded-xl bg-[#B56C6A] hover:bg-[#A15A58] text-[#FAF8F5] font-bold text-sm shadow-sm transition">
+                    確定移除並封存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. 座號名單與資料管理 Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-[#322F2B]/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#FAF8F5] rounded-3xl shadow-xl max-w-3xl w-full max-h-[92vh] flex flex-col border border-[#DDD8CE]">
+            <div class="flex items-center justify-between p-5 sm:p-6 border-b border-[#E5E0D6]">
+                <h3 class="text-xl font-extrabold text-[#3E3B36] flex items-center gap-2">
+                    <i data-lucide="sliders-horizontal" class="w-5 h-5 text-[#6B7E8C]"></i> 座號與資料管理
+                </h3>
+                <button onclick="closeSettingsModal()" class="w-8 h-8 rounded-full bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#6F6A61] flex items-center justify-center transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            
+            <div class="p-5 sm:p-6 overflow-y-auto space-y-6">
+                <!-- 區塊 A：座號批次產生與逐一編輯 (支援跳號) -->
+                <div class="bg-[#EFECE5] p-4 sm:p-5 rounded-2xl border border-[#DDD7CB] space-y-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="font-extrabold text-[#3E3B36] flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-lg bg-[#DCE1E5] text-[#556774] flex items-center justify-center text-xs">1</span>
+                            班級座號名單（支援自由跳號與個別修改）
+                        </h4>
+                        <span id="modalStudentCountBadge" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#DCE1E5] text-[#556774]">目前 0 人</span>
+                    </div>
+                    
+                    <!-- 批次跳號產生器 -->
+                    <div class="bg-white p-3.5 rounded-xl border border-[#DDD7CB] space-y-2">
+                        <label class="block text-xs font-bold text-[#524E47]">
+                            批次輸入 / 跳號產生器（支援逗號、空白與連字號區間，例如：<code class="text-[#556774] bg-[#E6E9EC] px-1 rounded">1, 2, 3, 5, 8, 10-15, 21</code>）
+                        </label>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="text" id="batchSeatInput" placeholder="輸入座號或區間，如：1-10, 12, 15-20" 
+                                   class="flex-1 px-3 py-2 rounded-xl border border-[#D2CCC0] text-sm font-medium focus:border-[#6B7E8C] outline-none">
+                            <button type="button" onclick="applyBatchSeats()" class="px-4 py-2 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] text-xs font-bold whitespace-nowrap transition flex items-center justify-center gap-1.5">
+                                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>加入座號
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 逐一新增單一座號 -->
+                    <div class="bg-white p-3.5 rounded-xl border border-[#DDD7CB] space-y-2">
+                        <label class="block text-xs font-bold text-[#524E47]">逐一新增單一座號（如轉學生或補登跳號）</label>
+                        <div class="flex flex-wrap sm:flex-nowrap gap-2">
+                            <input type="number" id="singleSeatNumInput" min="1" max="999" placeholder="座號 (如 25)" 
+                                   class="w-28 px-3 py-2 rounded-xl border border-[#D2CCC0] text-sm font-bold focus:border-[#6B7E8C] outline-none">
+                            <input type="text" id="singleSeatNameInput" placeholder="姓名 (選填)" 
+                                   class="flex-1 px-3 py-2 rounded-xl border border-[#D2CCC0] text-sm font-medium focus:border-[#6B7E8C] outline-none">
+                            <button type="button" onclick="addSingleStudent()" class="px-4 py-2 rounded-xl bg-[#68645D] hover:bg-[#56524B] text-[#FAF8F5] text-xs font-bold whitespace-nowrap transition flex items-center justify-center gap-1.5">
+                                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>新增單筆
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 現有座號清單編輯區 -->
+                    <div class="space-y-1.5">
+                        <div class="flex items-center justify-between text-xs font-bold text-[#7D786F] px-1">
+                            <span>已建立座號清單（可直接修改座號數字、姓名或刪除形成跳號）</span>
+                            <button type="button" onclick="clearAllStudentsInModal()" class="text-[#8F504E] hover:underline">清空名單</button>
+                        </div>
+                        <div id="modalStudentListContainer" class="max-h-56 overflow-y-auto bg-white rounded-xl border border-[#DDD7CB] divide-y divide-[#ECE8DF]">
+                            <!-- 由 JS 動態渲染學生編輯列 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 區塊 B：跨設備雲端同步設定 -->
+                <div class="bg-[#E6E9EC]/85 p-4 sm:p-5 rounded-2xl border border-[#CBD2D7] space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="font-extrabold text-[#3F4E59] flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-lg bg-[#6B7E8C] text-[#FAF8F5] flex items-center justify-center text-xs">2</span>
+                            跨設備雲端即時同步（多裝置共用同一份資料）
+                        </h4>
+                        <span id="modalCloudSyncState" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#FAF8F5] text-[#556774] border border-[#CBD2D7]">連線檢查中...</span>
+                    </div>
+                    <p class="text-xs text-[#5C574F] leading-relaxed">
+                        只要在您的手機、平板或教室電腦輸入相同的「班級同步代碼」，所有作業項目、座號狀態與繳交時間皆會自動上傳至雲端並即時雙向同步。
+                    </p>
+                    <div class="bg-white p-3.5 rounded-xl border border-[#CBD2D7] space-y-2.5">
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                            <label for="cloudRoomCodeInput" class="text-xs font-bold text-[#524E47] whitespace-nowrap">班級同步代碼：</label>
+                            <div class="flex flex-1 gap-2">
+                                <input type="text" id="cloudRoomCodeInput" placeholder="例如：class-502 或自訂專屬代碼" 
+                                       class="flex-1 px-3 py-2 rounded-xl border border-[#D2CCC0] text-sm font-bold text-[#3E3B36] focus:border-[#6B7E8C] outline-none">
+                                <button type="button" onclick="applyCloudRoomCode()" class="px-4 py-2 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] text-xs font-bold whitespace-nowrap transition">
+                                    套用並連線
+                                </button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#E5E0D6] text-[11px] text-[#7D786F]">
+                            <div class="break-all">
+                                <span class="font-bold text-[#5C574F]">裝置識別 ID：</span>
+                                <code id="displayUserUid" class="bg-[#EAE6DD] px-1.5 py-0.5 rounded text-[#524E47] select-all">驗證中...</code>
+                            </div>
+                            <button type="button" onclick="forcePushToCloud()" class="text-[#556774] hover:underline font-bold shrink-0">
+                                立即手動上傳目前資料至雲端
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 區塊 C：快速範例資料、JSON 備份與完全重置 -->
+                <div class="bg-[#EFECE5] p-4 sm:p-5 rounded-2xl border border-[#DDD7CB] space-y-3">
+                    <h4 class="font-extrabold text-[#3E3B36] flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-lg bg-[#DCE4DE] text-[#475D4D] flex items-center justify-center text-xs">3</span>
+                        快速範例測試、資料備份與重置
+                    </h4>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                        <button type="button" onclick="loadSampleDemoData()" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E6E9EC] hover:bg-[#DCE1E5] text-[#556774] border border-[#CBD2D7] text-xs font-bold transition">
+                            <i data-lucide="database" class="w-3.5 h-3.5"></i> 匯入範例資料（測試三欄作業看板與時間）
+                        </button>
+                        <button type="button" onclick="exportBackupData()" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#798E7E] hover:bg-[#697E6E] text-[#FAF8F5] text-xs font-bold transition">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> 匯出備份檔 (.json)
+                        </button>
+                        <label class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white hover:bg-[#EAE6DD] text-[#524E47] border border-[#D2CCC0] text-xs font-bold cursor-pointer transition">
+                            <i data-lucide="upload" class="w-3.5 h-3.5"></i> 匯入備份檔
+                            <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="importBackupData(event)">
+                        </label>
+                        <button type="button" onclick="openResetBlankModal()" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#EEDBDC] hover:bg-[#E4CAC9] text-[#7D4543] text-xs font-bold transition ml-auto">
+                            <i data-lucide="eraser" class="w-3.5 h-3.5"></i> 清空所有資料
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 區塊 D：已刪除作業留存紀錄（資料封存庫） -->
+                <div class="bg-[#EFECE5] p-4 sm:p-5 rounded-2xl border border-[#DDD7CB] space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="font-extrabold text-[#3E3B36] flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-lg bg-[#EEDBDC] text-[#7D4543] flex items-center justify-center text-xs">4</span>
+                            已刪除作業留存紀錄（自動封存）
+                        </h4>
+                        <span id="modalArchivedCountBadge" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#EEDBDC] text-[#7D4543]">已封存 0 項</span>
+                    </div>
+                    <p class="text-xs text-[#7D786F]">
+                        所有從看板移除的作業皆會保留當時全班的繳交狀態與時間戳記，您可隨時檢視明細、還原回主看板或匯出 Excel 留存。
+                    </p>
+                    <div id="modalArchivedListContainer" class="max-h-56 overflow-y-auto bg-white rounded-xl border border-[#DDD7CB] divide-y divide-[#ECE8DF]">
+                        <!-- 由 JS 動態渲染已封存作業清單 -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-[#E5E0D6] flex items-center justify-end gap-2 bg-[#EFECE5] rounded-b-3xl">
+                <button onclick="closeSettingsModal()" class="px-5 py-2.5 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] font-bold text-sm shadow-sm transition">
+                    完成並關閉
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. 清空所有資料確認 Modal -->
+    <div id="resetBlankConfirmModal" class="fixed inset-0 bg-[#322F2B]/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#FAF8F5] rounded-3xl shadow-xl max-w-sm w-full p-6 border border-[#DDD8CE] text-center">
+            <div class="w-14 h-14 rounded-full bg-[#EEDBDC] text-[#8F504E] flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="alert-triangle" class="w-7 h-7"></i>
+            </div>
+            <h3 class="text-lg font-extrabold text-[#3E3B36] mb-2">確定要清空所有資料嗎？</h3>
+            <p class="text-xs text-[#7D786F] mb-6">這將會清空所有作業項目、所有座號名單與時間紀錄，恢復為初始空白狀態且無法復原。</p>
+            <div class="flex items-center justify-center gap-3">
+                <button onclick="closeResetBlankModal()" class="flex-1 py-2.5 rounded-xl bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#5C574F] font-bold text-sm transition">
+                    取消
+                </button>
+                <button onclick="executeResetToBlank()" class="flex-1 py-2.5 rounded-xl bg-[#B56C6A] hover:bg-[#A15A58] text-[#FAF8F5] font-bold text-sm shadow-sm transition">
+                    確定清空
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. 選擇 Excel 匯出模式 Modal -->
+    <div id="exportExcelModal" class="fixed inset-0 bg-[#322F2B]/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-[#FAF8F5] rounded-3xl shadow-xl max-w-md w-full p-6 border border-[#DDD8CE] space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-[#E5E0D6]">
+                <h3 class="text-xl font-extrabold text-[#3E3B36] flex items-center gap-2">
+                    <i data-lucide="file-spreadsheet" class="w-5 h-5 text-[#4D8B62]"></i>
+                    <span>選擇 Excel 匯出方式</span>
+                </h3>
+                <button onclick="closeExportExcelModal()" class="w-8 h-8 rounded-full bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#6F6A61] flex items-center justify-center transition">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <p class="text-xs text-[#7D786F] leading-relaxed">
+                請選擇要如何分頁整理您的 Excel (.xlsx) 檔案（所有模式皆會保留完整的狀態、繳交時間與完成時間紀錄）：
+            </p>
+            <div class="space-y-2.5">
+                <button type="button" onclick="exportToExcel('byAssignment')" class="w-full p-3.5 rounded-2xl bg-[#EFECE5] hover:bg-[#E4E0D6] border border-[#D4CEC2] text-left transition flex items-start gap-3 group">
+                    <div class="w-10 h-10 rounded-xl bg-[#DCE6EE] text-[#335269] flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition">
+                        <i data-lucide="folder-kanban" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-sm text-[#3E3B36]">依「作業項目」分頁匯出</div>
+                        <div class="text-xs text-[#6F6A61] mt-0.5">每項作業各自獨立成一個工作表，內含全班每位座號的狀態與繳交／完成時間（附項目統計總表）。</div>
+                    </div>
+                </button>
+
+                <button type="button" onclick="exportToExcel('byStudent')" class="w-full p-3.5 rounded-2xl bg-[#EFECE5] hover:bg-[#E4E0D6] border border-[#D4CEC2] text-left transition flex items-start gap-3 group">
+                    <div class="w-10 h-10 rounded-xl bg-[#CBE4D1] text-[#2F5D3D] flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition">
+                        <i data-lucide="user-check" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-sm text-[#3E3B36]">依「座號」分頁匯出</div>
+                        <div class="text-xs text-[#6F6A61] mt-0.5">每位學生座號各自獨立成一個工作表，列出該生所有作業的狀態與時間明細（附個人欠交統計總表）。</div>
+                    </div>
+                </button>
+
+                <button type="button" onclick="exportToExcel('summary')" class="w-full p-3.5 rounded-2xl bg-[#EFECE5] hover:bg-[#E4E0D6] border border-[#D4CEC2] text-left transition flex items-start gap-3 group">
+                    <div class="w-10 h-10 rounded-xl bg-[#F9E3B4] text-[#7D5718] flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition">
+                        <i data-lucide="table" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <div class="font-extrabold text-sm text-[#3E3B36]">彙整總表（單一矩陣總覽）</div>
+                        <div class="text-xs text-[#6F6A61] mt-0.5">將所有作業與座號彙整為「作業總表」、「時間明細」與「各項目統計」三個總覽工作表。</div>
+                    </div>
+                </button>
+            </div>
+            <div class="pt-2 flex justify-end border-t border-[#E5E0D6]">
+                <button type="button" onclick="closeExportExcelModal()" class="px-4 py-2 rounded-xl bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#5C574F] font-bold text-xs transition">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 浮動 Toast 提示訊息 -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- 引入 Firebase SDK (App, Auth, Firestore) 實現跨設備雲端儲存與即時同步 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 使用您提供的 Firebase 專案金鑰設定
+        const userProvidedFirebaseConfig = {
+            apiKey: "AIzaSyDEn4ZhuZQ5C_QWtK5z9q_CYDB4k8fDfAM",
+            authDomain: "homework02-5c9f4.firebaseapp.com",
+            projectId: "homework02-5c9f4",
+            storageBucket: "homework02-5c9f4.firebasestorage.app",
+            messagingSenderId: "117570368164",
+            appId: "1:117570368164:web:617270343d3aeaced76c31"
+        };
+
+        // 優先採用您指定的專案金鑰，若環境另有注入則保留相容
+        const firebaseConfig = userProvidedFirebaseConfig;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'homework02-5c9f4';
+
+        const firebaseApp = initializeApp(firebaseConfig);
+        const auth = getAuth(firebaseApp);
+        const db = getFirestore(firebaseApp);
+
+        let currentUser = null;
+        let unsubscribeSnapshot = null;
+        let currentRoomCode = 'default-class';
+        let isApplyingRemoteUpdate = false;
+        let hasInitialCloudCheckDone = false;
+
+        // 解析網址參數 ?room=xxx 以支援直接分享跨設備連結
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('room')) {
+            currentRoomCode = urlParams.get('room').trim() || 'default-class';
+        }
+
+        function updateCloudIndicator(status, text) {
+            const dot = document.getElementById('cloudStatusDot');
+            const label = document.getElementById('cloudStatusText');
+            const modalLabel = document.getElementById('modalCloudSyncState');
+            if (dot && label) {
+                if (status === 'connected') {
+                    dot.className = 'w-2 h-2 rounded-full bg-[#798E7E]';
+                } else if (status === 'syncing') {
+                    dot.className = 'w-2 h-2 rounded-full bg-[#6B7E8C] animate-ping';
+                } else if (status === 'error') {
+                    dot.className = 'w-2 h-2 rounded-full bg-[#B56C6A]';
+                } else {
+                    dot.className = 'w-2 h-2 rounded-full bg-[#C3A373] animate-pulse';
+                }
+                label.textContent = text;
+            }
+            if (modalLabel) {
+                modalLabel.textContent = text;
+            }
+        }
+
+        // 取得 Firestore 班級看板文件參照路徑
+        function getCloudDocRef(roomCode) {
+            const safeRoom = (roomCode || 'default-class').replace(/[^a-zA-Z0-9_-]/g, '_');
+            return doc(db, 'artifacts', appId, 'public', 'data', 'homework_boards', safeRoom);
+        }
+
+        // 啟動對雲端文件的即時監聽（支援已驗證用戶與未開啟 Auth 時的直連降級模式）
+        function subscribeToCloudBoard(roomCode) {
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+                unsubscribeSnapshot = null;
+            }
+
+            currentRoomCode = roomCode;
+            const roomInput = document.getElementById('cloudRoomCodeInput');
+            if (roomInput) roomInput.value = currentRoomCode;
+
+            updateCloudIndicator('syncing', `同步中 (${currentRoomCode})`);
+            const docRef = getCloudDocRef(currentRoomCode);
+
+            unsubscribeSnapshot = onSnapshot(docRef, (snapshot) => {
+                if (snapshot.exists()) {
+                    const cloudData = snapshot.data();
+                    if (cloudData && cloudData.payloadJson) {
+                        try {
+                            const parsed = JSON.parse(cloudData.payloadJson);
+                            if (parsed && Array.isArray(parsed.students) && Array.isArray(parsed.assignments)) {
+                                isApplyingRemoteUpdate = true;
+                                if (typeof window.applyRemoteCloudState === 'function') {
+                                    window.applyRemoteCloudState(parsed);
+                                }
+                                isApplyingRemoteUpdate = false;
+                            }
+                        } catch (err) {
+                            console.error('解析雲端資料失敗:', err);
+                        }
+                    }
+                    hasInitialCloudCheckDone = true;
+                    updateCloudIndicator('connected', `雲端已同步 (${currentRoomCode})`);
+                } else {
+                    // 若雲端尚無此代碼資料，則將目前畫面資料初始化上傳至雲端
+                    hasInitialCloudCheckDone = true;
+                    pushStateToFirestore(window.getAppStateSnapshot ? window.getAppStateSnapshot() : null, true);
+                }
+            }, (error) => {
+                console.error('Firestore 即時監聽錯誤:', error);
+                updateCloudIndicator('error', '雲端連線異常（請檢查資料庫權限規則）');
+                if (typeof window.showToast === 'function') {
+                    window.showToast('雲端同步受阻：請確認 Firestore 讀寫規則已開啟', 'error');
+                }
+            });
+        }
+
+        // 將狀態寫入 Firestore
+        async function pushStateToFirestore(stateObj, isSilent = false) {
+            if (!stateObj || isApplyingRemoteUpdate) return;
+            try {
+                updateCloudIndicator('syncing', `上傳中 (${currentRoomCode})...`);
+                const docRef = getCloudDocRef(currentRoomCode);
+                await setDoc(docRef, {
+                    payloadJson: JSON.stringify(stateObj),
+                    updatedAt: new Date().toISOString(),
+                    updatedBy: currentUser ? currentUser.uid : 'direct-guest',
+                    roomCode: currentRoomCode
+                });
+                updateCloudIndicator('connected', `雲端已同步 (${currentRoomCode})`);
+                if (!isSilent && typeof window.showToast === 'function') {
+                    window.showToast(`已成功上傳至雲端（代碼：${currentRoomCode}）`);
+                }
+            } catch (error) {
+                console.error('上傳雲端失敗:', error);
+                updateCloudIndicator('error', '雲端上傳失敗');
+                if (typeof window.showToast === 'function') {
+                    window.showToast('雲端上傳失敗，請確認 Firestore 權限規則已開啟', 'error');
+                }
+            }
+        }
+
+        // 暴露給全域主程式呼叫的雲端橋接介面
+        window.cloudSyncBridge = {
+            save: (stateObj) => {
+                if (!hasInitialCloudCheckDone) return;
+                pushStateToFirestore(stateObj, true);
+            },
+            changeRoom: (newCode) => {
+                const trimmed = (newCode || '').trim() || 'default-class';
+                hasInitialCloudCheckDone = false;
+                subscribeToCloudBoard(trimmed);
+                if (typeof window.showToast === 'function') {
+                    window.showToast(`已切換雲端同步代碼為：${trimmed}`);
+                }
+            },
+            forcePush: () => {
+                if (window.getAppStateSnapshot) {
+                    pushStateToFirestore(window.getAppStateSnapshot(), false);
+                }
+            },
+            getRoomCode: () => currentRoomCode
+        };
+
+        // 直接使用您專屬專案的匿名登入；若尚未在 Console 啟用 Authentication 則自動切換為直連 Firestore 模式
+        async function initFirebaseAuthAndSync() {
+            try {
+                await signInAnonymously(auth);
+            } catch (err) {
+                console.warn('Firebase 匿名登入未啟用，自動切換為直連 Firestore 模式:', err.code || err.message);
+                const uidEl = document.getElementById('displayUserUid');
+                if (uidEl) uidEl.textContent = '直連模式（未啟用 Auth）';
+                subscribeToCloudBoard(currentRoomCode);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                const uidEl = document.getElementById('displayUserUid');
+                if (uidEl) uidEl.textContent = user.uid;
+                subscribeToCloudBoard(currentRoomCode);
+            }
+        });
+
+        initFirebaseAuthAndSync();
+    </script>
+
+    <script>
+        /**
+         * ============================================================================
+         * 班級作業與訂正追蹤系統 - 核心邏輯
+         * - 項目頁：每一排並列三張作業項目卡片 (grid-cols-1 md:grid-cols-2 lg:grid-cols-3)
+         * - 座號頁：橫向條列式呈現 (僅顯示未完成項目)
+         * - 自動/手動記錄繳交時間與完成時間
+         * - 整合 Firebase Firestore 跨設備雲端即時同步
+         * - 匯出多工作表 Excel (.xlsx)
+         * ============================================================================
+         */
+
+        // 建立完全空白的初始狀態
+        function createBlankState() {
+            return {
+                students: [],
+                assignments: [],
+                archivedAssignments: [],
+                settings: {
+                    hideCompletedInAssignments: false,
+                    hideAllDoneInSeats: false
+                }
+            };
+        }
+
+        // 取得本地 YYYY-MM-DD 字串
+        function getLocalDateString(offsetDays = 0) {
+            const d = new Date();
+            d.setDate(d.getDate() + offsetDays);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        // 取得本地 YYYY-MM-DD HH:mm 時間字串
+        function getCurrentDateTimeString() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // 計算兩個 YYYY-MM-DD 日期相差天數
+        function getDaysDiff(dateStrA, dateStrB) {
+            const [y1, m1, d1] = dateStrA.split('-').map(Number);
+            const [y2, m2, d2] = dateStrB.split('-').map(Number);
+            const utc1 = Date.UTC(y1, m1 - 1, d1);
+            const utc2 = Date.UTC(y2, m2 - 1, d2);
+            return Math.floor((utc1 - utc2) / (1000 * 60 * 60 * 24));
+        }
+
+        // 標準化單筆學生作業紀錄物件 ({ status, submittedAt, completedAt })
+        function normalizeRecord(rec) {
+            if (!rec) {
+                return { status: 'unsubmitted', submittedAt: null, completedAt: null };
+            }
+            if (typeof rec === 'string') {
+                return { status: rec, submittedAt: null, completedAt: null };
+            }
+            return {
+                status: rec.status || 'unsubmitted',
+                submittedAt: rec.submittedAt || null,
+                completedAt: rec.completedAt || null
+            };
+        }
+
+        // 取得並確保單一學生在某作業的紀錄物件已標準化
+        function getStudentRecord(assignment, studentId) {
+            if (!assignment.records) assignment.records = {};
+            if (!assignment.records[studentId] || typeof assignment.records[studentId] === 'string') {
+                assignment.records[studentId] = normalizeRecord(assignment.records[studentId]);
+            }
+            return assignment.records[studentId];
+        }
+        // 全域狀態（採記憶體狀態搭配 Firebase Firestore 雲端即時同步）
+        let appState = createBlankState();
+        let activeTab = 'assignments'; // 'assignments' | 'seats' | 'poster'
+        let referenceDate = getLocalDateString(0);
+        let pendingDeleteId = null;
+        // 提升飽和度與對比度的狀態樣式設定對照表
+        const STATUS_CONFIG = {
+            unsubmitted: {
+                label: '未交',
+                bgClass: 'bg-[#E6E2DA] hover:bg-[#DBD6CC] border-[#C5BEB1] text-[#4A463F]',
+                badgeClass: 'bg-[#E4E0D8] text-[#4E4A43] border-[#C6C0B4]'
+            },
+            correction: {
+                label: '待訂正',
+                bgClass: 'bg-[#F7DC9E] hover:bg-[#F2CE80] border-[#E0B55E] text-[#6E490D]',
+                badgeClass: 'bg-[#F9E3B4] text-[#7D5718] border-[#E6C17A]'
+            },
+            completed: {
+                label: '完成',
+                bgClass: 'bg-[#4D8B62] hover:bg-[#3F7752] border-[#386B49] text-[#FAF8F5] shadow-2xs',
+                badgeClass: 'bg-[#CBE4D1] text-[#2F5D3D] border-[#96C2A2]'
+            },
+            overdue_unsubmitted: {
+                label: '逾期未交',
+                bgClass: 'bg-[#C94A46] hover:bg-[#B53D39] border-[#9E312E] text-[#FAF8F5] shadow-2xs ring-2 ring-[#F2C3C1]',
+                badgeClass: 'bg-[#F6D0CE] text-[#8F2D2A] border-[#E09B97] font-bold'
+            },
+            overdue_correction: {
+                label: '逾期待訂正',
+                bgClass: 'bg-[#D65C47] hover:bg-[#C24D39] border-[#E8B85D] text-[#FAF8F5] shadow-2xs ring-2 ring-[#F9E3B4]',
+                badgeClass: 'bg-[#F6D0CE] text-[#8F2D2A] border-[#E0B55E] font-bold'
+            }
+        };
+
+        // 觸發雲端儲存同步
+        function saveStateToStorage(stateToSave = appState) {
+            if (window.cloudSyncBridge && typeof window.cloudSyncBridge.save === 'function') {
+                window.cloudSyncBridge.save(stateToSave);
+            }
+        }
+
+        function applyCloudRoomCode() {
+            const input = document.getElementById('cloudRoomCodeInput');
+            if (!input) return;
+            const code = input.value.trim() || 'default-class';
+            if (window.cloudSyncBridge) {
+                window.cloudSyncBridge.changeRoom(code);
+            }
+        }
+
+        function forcePushToCloud() {
+            if (window.cloudSyncBridge) {
+                window.cloudSyncBridge.forcePush();
+            }
+        }
+
+        // 計算實際顯示狀態 (若超過基準日且尚未完成，區分「逾期未交」與「逾期待訂正」)
+        function getEffectiveStatus(assignment, studentId) {
+            const rec = getStudentRecord(assignment, studentId);
+            if (rec.status === 'completed') {
+                return 'completed';
+            }
+            if (referenceDate > assignment.dueDate) {
+                return rec.status === 'correction' ? 'overdue_correction' : 'overdue_unsubmitted';
+            }
+            return rec.status;
+        }
+
+        // 判斷是否為任何一種逾期狀態
+        function isOverdueStatus(effStatus) {
+            return effStatus === 'overdue_unsubmitted' || effStatus === 'overdue_correction';
+        }
+
+        // 提供給雲端同步模組呼叫的狀態快照與遠端資料套用介面
+        window.getAppStateSnapshot = function() {
+            return appState;
+        };
+
+        window.applyRemoteCloudState = function(remoteData) {
+            if (!remoteData) return;
+            if (Array.isArray(remoteData.assignments)) {
+                remoteData.assignments.forEach(hw => {
+                    if (!hw.records) hw.records = {};
+                    Object.keys(hw.records).forEach(stId => {
+                        hw.records[stId] = normalizeRecord(hw.records[stId]);
+                    });
+                });
+            }
+            if (Array.isArray(remoteData.archivedAssignments)) {
+                remoteData.archivedAssignments.forEach(hw => {
+                    if (!hw.records) hw.records = {};
+                    Object.keys(hw.records).forEach(stId => {
+                        hw.records[stId] = normalizeRecord(hw.records[stId]);
+                    });
+                });
+            }
+            appState = {
+                students: Array.isArray(remoteData.students) ? remoteData.students : [],
+                assignments: Array.isArray(remoteData.assignments) ? remoteData.assignments : [],
+                archivedAssignments: Array.isArray(remoteData.archivedAssignments) ? remoteData.archivedAssignments : [],
+                settings: Object.assign({
+                    hideCompletedInAssignments: false,
+                    hideAllDoneInSeats: false
+                }, remoteData.settings || {})
+            };
+            renderApp();
+            if (!document.getElementById('settingsModal').classList.contains('hidden')) {
+                renderModalStudentList();
+                renderModalArchivedList();
+            }
+            if (currentTimeLogContext && !document.getElementById('timeLogModal').classList.contains('hidden')) {
+                renderTimeLogModalContent();
+            }
+        };
+
+        /**
+         * 點擊切換學生作業狀態，並自動套用時間戳記規則：
+         * 1. 未交 -> 待訂正：自動記錄 submittedAt (若為空)
+         * 2. 待訂正 -> 完成：自動記錄 completedAt (若 submittedAt 為空亦同步填入)
+         * 3. 完成 -> 未交：清除 submittedAt 與 completedAt
+         */
+        function toggleStudentStatus(assignmentId, studentId) {
+            const assignment = appState.assignments.find(a => a.id === assignmentId);
+            if (!assignment) return;
+
+            const rec = getStudentRecord(assignment, studentId);
+            const nowStr = getCurrentDateTimeString();
+
+            if (rec.status === 'unsubmitted') {
+                rec.status = 'correction';
+                if (!rec.submittedAt) rec.submittedAt = nowStr;
+                rec.completedAt = null;
+            } else if (rec.status === 'correction') {
+                rec.status = 'completed';
+                if (!rec.submittedAt) rec.submittedAt = nowStr;
+                rec.completedAt = nowStr;
+            } else {
+                rec.status = 'unsubmitted';
+                rec.submittedAt = null;
+                rec.completedAt = null;
+            }
+
+            saveStateToStorage();
+            renderApp();
+        }
+
+        // 一鍵將某項作業「全部設為指定狀態（未交 / 待訂正 / 完成）」並同步更新時間戳記
+        function batchSetAssignmentStatus(assignmentId, targetStatus) {
+            const assignment = appState.assignments.find(a => a.id === assignmentId);
+            if (!assignment) return;
+
+            const nowStr = getCurrentDateTimeString();
+            appState.students.forEach(st => {
+                const rec = getStudentRecord(assignment, st.id);
+                if (targetStatus === 'completed') {
+                    if (rec.status !== 'completed') {
+                        if (!rec.submittedAt) rec.submittedAt = nowStr;
+                        rec.completedAt = nowStr;
+                    }
+                    rec.status = 'completed';
+                } else if (targetStatus === 'correction') {
+                    if (!rec.submittedAt) rec.submittedAt = nowStr;
+                    rec.completedAt = null;
+                    rec.status = 'correction';
+                } else if (targetStatus === 'unsubmitted') {
+                    rec.submittedAt = null;
+                    rec.completedAt = null;
+                    rec.status = 'unsubmitted';
+                }
+            });
+            saveStateToStorage();
+            renderApp();
+
+            const statusToastMap = {
+                unsubmitted: '已將本項作業全班設為「未交」並清除時間！',
+                correction: '已將本項作業全班設為「待訂正」並記錄繳交時間！',
+                completed: '已將本項作業全班設為「完成」並記錄完成時間！'
+            };
+            showToast(statusToastMap[targetStatus] || '已更新全班狀態！');
+        }
+
+        // 切換分頁
+        function switchTab(tabName) {
+            activeTab = tabName;
+            ['assignments', 'seats', 'poster'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if (t === tabName) {
+                    btn.className = t === 'poster'
+                        ? 'flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition bg-[#C94A46] text-[#FAF8F5] shadow-2xs'
+                        : 'flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition bg-[#FAF8F5] text-[#3B5E78] shadow-2xs';
+                } else {
+                    btn.className = t === 'poster'
+                        ? 'flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition text-[#9E3532] hover:bg-[#F7DCD9]'
+                        : 'flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition text-[#6F6A61] hover:text-[#3E3B36]';
+                }
+            });
+            renderApp();
+        }
+
+        // 更新大字報逾期徽章數量
+        function updateOverdueBadge() {
+            let overdueTotalCount = 0;
+            appState.assignments.forEach(hw => {
+                appState.students.forEach(st => {
+                    if (isOverdueStatus(getEffectiveStatus(hw, st.id))) {
+                        overdueTotalCount++;
+                    }
+                });
+            });
+
+            const badge = document.getElementById('overdueBadgeCount');
+            if (overdueTotalCount > 0) {
+                badge.textContent = overdueTotalCount;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        // 渲染上方工具列
+        function renderToolbar() {
+            const toolbar = document.getElementById('toolbarActions');
+            
+            if (activeTab === 'assignments') {
+                toolbar.innerHTML = `
+                    <button onclick="openAssignmentModal()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#486D88] hover:bg-[#3A5B73] text-[#FAF8F5] text-sm font-bold shadow-xs transition">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span>新增作業項目</span>
+                    </button>
+                `;
+            } else if (activeTab === 'seats') {
+                const hideAllDone = appState.settings.hideAllDoneInSeats;
+                toolbar.innerHTML = `
+                    <label class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#FAF8F5] border border-[#D8D2C6] hover:bg-[#EFECE5] cursor-pointer select-none shadow-2xs transition">
+                        <input type="checkbox" ${hideAllDone ? 'checked' : ''} onchange="toggleHideAllDoneSeats(this.checked)" 
+                               class="w-4 h-4 accent-[#486D88] rounded cursor-pointer">
+                        <span class="text-sm font-bold text-[#524E47]">隱藏「全部完成」座號</span>
+                    </label>
+                    <button onclick="openSettingsModal()" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#68645D] hover:bg-[#56524B] text-[#FAF8F5] text-sm font-bold shadow-2xs transition">
+                        <i data-lucide="user-plus" class="w-4 h-4"></i>
+                        <span>編輯座號名單</span>
+                    </button>
+                `;
+            } else if (activeTab === 'poster') {
+                toolbar.innerHTML = `
+                    <button onclick="togglePosterFullscreen()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#C94A46] hover:bg-[#B53D39] text-[#FAF8F5] text-sm font-bold shadow-xs transition">
+                        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                        <span>全螢幕大字報投影</span>
+                    </button>
+                `;
+            }
+        }
+
+        function toggleHideCompleted(assignmentId) {
+            const hw = appState.assignments.find(a => a.id === assignmentId);
+            if (!hw) return;
+            hw.hideCompleted = !hw.hideCompleted;
+            saveStateToStorage();
+            renderApp();
+        }
+
+        function toggleHideAllDoneSeats(checked) {
+            appState.settings.hideAllDoneInSeats = checked;
+            saveStateToStorage();
+            renderApp();
+        }
+
+        // 主渲染入口
+        function renderApp() {
+            // 確保學生清單依座號數字由小到大排序
+            appState.students.sort((a, b) => a.number - b.number);
+            updateOverdueBadge();
+            renderToolbar();
+
+            const container = document.getElementById('mainContainer');
+            if (activeTab === 'assignments') {
+                renderAssignmentsView(container);
+            } else if (activeTab === 'seats') {
+                renderSeatsListView(container);
+            } else if (activeTab === 'poster') {
+                renderPosterView(container);
+            }
+
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 分頁一：【項目呈現（每一排三項作業卡片網格）】
+         * 每一排並列三張作業項目卡片 (grid-cols-1 sm:grid-cols-2 md:grid-cols-3)
+         * 每一個作業項目單獨為一格，方格內直接緊湊排列學生方格（座號、姓名、狀態、時間）
+         * ============================================================================
+         */
+        function renderAssignmentsView(container) {
+            if (appState.students.length === 0 && appState.assignments.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-[#FAF8F5] rounded-3xl border-2 border-dashed border-[#D1CCC2] p-8 sm:p-12 text-center max-w-xl mx-auto my-8 space-y-5">
+                        <div class="w-16 h-16 rounded-2xl bg-[#E6E9EC] text-[#6B7E8C] flex items-center justify-center mx-auto">
+                            <i data-lucide="layout-grid" class="w-8 h-8"></i>
+                        </div>
+                        <div class="space-y-2">
+                            <h2 class="text-xl sm:text-2xl font-extrabold text-[#3E3B36]">歡迎使用班級作業與訂正追蹤系統</h2>
+                            <p class="text-sm text-[#7D786F]">目前為完全空白狀態，請先建立班級座號（支援自由跳號），並新增作業項目開始追蹤！</p>
+                        </div>
+                        <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                            <button onclick="openSettingsModal()" class="w-full sm:w-auto px-5 py-3 rounded-xl bg-[#68645D] hover:bg-[#56524B] text-[#FAF8F5] font-bold text-sm shadow-xs transition flex items-center justify-center gap-2">
+                                <i data-lucide="user-plus" class="w-4 h-4"></i> 1. 新增班級座號
+                            </button>
+                            <button onclick="openAssignmentModal()" class="w-full sm:w-auto px-5 py-3 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] font-bold text-sm shadow-xs transition flex items-center justify-center gap-2">
+                                <i data-lucide="plus" class="w-4 h-4"></i> 2. 新增作業項目
+                            </button>
+                        </div>
+                        <div class="pt-1">
+                            <button onclick="loadSampleDemoData()" class="text-xs font-bold text-[#6B7E8C] hover:underline">
+                                或點此「匯入範例資料」快速體驗三欄作業看板與時間紀錄功能
+                            </button>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (appState.assignments.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-[#FAF8F5] rounded-3xl border-2 border-dashed border-[#D1CCC2] p-10 text-center max-w-lg mx-auto my-8 space-y-4">
+                        <div class="w-14 h-14 rounded-2xl bg-[#E6E9EC] text-[#6B7E8C] flex items-center justify-center mx-auto">
+                            <i data-lucide="folder-plus" class="w-7 h-7"></i>
+                        </div>
+                        <h2 class="text-xl font-extrabold text-[#3E3B36]">目前尚無作業項目</h2>
+                        <p class="text-sm text-[#7D786F]">目前已建立 ${appState.students.length} 位學生座號，點擊下方按鈕新增作業即可開始追蹤。</p>
+                        <button onclick="openAssignmentModal()" class="px-5 py-2.5 rounded-xl bg-[#6B7E8C] hover:bg-[#5B6D7B] text-[#FAF8F5] font-bold text-sm shadow-xs transition inline-flex items-center gap-1.5">
+                            <i data-lucide="plus" class="w-4 h-4"></i> 新增作業項目
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            const totalStudents = appState.students.length;
+            const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+            const cardsHtml = sortedAssignments.map(hw => {
+                const isOverdueDate = referenceDate > hw.dueDate;
+                const hideCompleted = Boolean(hw.hideCompleted);
+                let completedCount = 0;
+                let unsubmittedCount = 0;
+                let correctionCount = 0;
+                let overdueTotalCount = 0;
+
+                // 統計人數並過濾要呈現的座號清單
+                const visibleStudents = [];
+                appState.students.forEach(st => {
+                    const effStatus = getEffectiveStatus(hw, st.id);
+                    if (effStatus === 'completed') completedCount++;
+                    else if (isOverdueStatus(effStatus)) overdueTotalCount++;
+                    else if (effStatus === 'correction') correctionCount++;
+                    else unsubmittedCount++;
+
+                    if (!(hideCompleted && effStatus === 'completed')) {
+                        visibleStudents.push({ student: st, effStatus });
+                    }
+                });
+
+                const allDone = totalStudents > 0 && completedCount === totalStudents;
+
+                // 直接緊湊排列所有符合篩選條件的學生小方格（不顯示時間標記，保持畫面清爽）
+                const studentCellsHtml = visibleStudents.map(item => {
+                    const st = item.student;
+                    const effStatus = item.effStatus;
+                    const cfg = STATUS_CONFIG[effStatus];
+                    const statusText = cfg.label;
+
+                    return `
+                        <button onclick="toggleStudentStatus('${hw.id}', '${st.id}')"
+                                title="點擊切換狀態（目前：${statusText}）"
+                                class="seat-btn p-2 rounded-xl border ${cfg.bgClass} flex flex-col items-center justify-center text-center shadow-2xs">
+                            <span class="text-base font-black leading-none">${st.number}</span>
+                            ${st.name ? `<span class="text-[11px] font-bold mt-1 truncate max-w-full opacity-90">${escapeHtml(st.name)}</span>` : ''}
+                            <span class="text-[10px] font-extrabold mt-1 px-1.5 py-0.2 rounded bg-black/5 whitespace-nowrap">${statusText}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                return `
+                    <section class="bg-[#FAF8F5] rounded-3xl border ${isOverdueDate && !allDone ? 'border-[#D7B3B1] shadow-[#EEDBDC]/60' : 'border-[#DDD8CE]'} shadow-2xs overflow-hidden flex flex-col transition">
+                        <!-- 作業卡片頂部標頭 -->
+                        <div class="p-3.5 sm:p-4 border-b border-[#E5E0D6] space-y-2.5 ${isOverdueDate && !allDone ? 'bg-[#F4EBE9]' : 'bg-[#F2EFE8]'}">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <h2 class="text-base font-extrabold text-[#3E3B36] break-words leading-snug">${escapeHtml(hw.title)}</h2>
+                                        ${isOverdueDate && !allDone 
+                                            ? `<span class="px-2 py-0.5 rounded-lg bg-[#EEDBDC] text-[#7D4543] text-[11px] font-extrabold border border-[#DBBDBB] shrink-0">逾期 ${getDaysDiff(referenceDate, hw.dueDate)} 天</span>` 
+                                            : ''}
+                                        ${allDone 
+                                            ? `<span class="px-2 py-0.5 rounded-lg bg-[#DCE4DE] text-[#475D4D] text-[11px] font-extrabold border border-[#BCC9BF] inline-flex items-center gap-0.5 shrink-0"><i data-lucide="check" class="w-3 h-3"></i>全班完成</span>` 
+                                            : ''}
+                                    </div>
+                                    <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[#7D786F] font-medium mt-1">
+                                        <span class="${isOverdueDate && !allDone ? 'text-[#8F504E] font-bold' : ''} inline-flex items-center gap-1">
+                                            <i data-lucide="calendar-check" class="w-3.5 h-3.5"></i>期限：${hw.dueDate}
+                                        </span>
+                                        <span>全班共 ${totalStudents} 人</span>
+                                    </div>
+                                </div>
+
+                                <!-- 編輯與刪除小按鈕 -->
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button onclick="openAssignmentModal('${hw.id}')" title="編輯作業名稱與期限"
+                                            class="p-1.5 rounded-xl bg-white hover:bg-[#EAE6DD] text-[#5C574F] border border-[#D8D2C6] transition">
+                                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button onclick="openDeleteModal('${hw.id}')" title="刪除作業"
+                                            class="p-1.5 rounded-xl bg-white hover:bg-[#EEDBDC] text-[#7D786F] hover:text-[#8F504E] border border-[#D8D2C6] transition">
+                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 四大狀態人數統計（提升飽和度色票） -->
+                            <div class="grid grid-cols-4 gap-1.5 text-center">
+                                <div class="bg-[#E4E0D8] border border-[#C6C0B4] rounded-xl py-1 px-1">
+                                    <div class="text-[10px] font-bold text-[#5C574F]">未交</div>
+                                    <div class="text-sm font-black text-[#423E38]">${unsubmittedCount}</div>
+                                </div>
+                                <div class="bg-[#F9E3B4] border border-[#E6C17A] rounded-xl py-1 px-1">
+                                    <div class="text-[10px] font-bold text-[#8A5F16]">訂正</div>
+                                    <div class="text-sm font-black text-[#6E490D]">${correctionCount}</div>
+                                </div>
+                                <div class="bg-[#CBE4D1] border border-[#96C2A2] rounded-xl py-1 px-1">
+                                    <div class="text-[10px] font-bold text-[#366B46]">完成</div>
+                                    <div class="text-sm font-black text-[#265233]">${completedCount}</div>
+                                </div>
+                                <div class="bg-[#F6D0CE] border border-[#E09B97] rounded-xl py-1 px-1">
+                                    <div class="text-[10px] font-bold text-[#9E3532]">逾期</div>
+                                    <div class="text-sm font-black text-[#8F2D2A]">${overdueTotalCount}</div>
+                                </div>
+                            </div>
+
+                            <!-- 卡片專屬操作列：查詢時間記錄、單獨隱藏已完成 + 全班一鍵設為未交/待訂正/完成 -->
+                            <div class="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-[#DDD7CB]">
+                                ${totalStudents > 0 ? `
+                                    <div class="flex items-center gap-1">
+                                        <button onclick="openAssignmentTimeLogModal('${hw.id}')" title="查詢或手動修改本項作業的繳交與完成時間"
+                                                class="px-2 py-1 rounded-lg bg-[#DCE6EE] hover:bg-[#CEDCE7] text-[#335269] border border-[#B2C6D6] text-[11px] font-bold transition inline-flex items-center gap-1">
+                                            <i data-lucide="clock" class="w-3 h-3"></i>查詢時間
+                                        </button>
+                                        <button onclick="toggleHideCompleted('${hw.id}')" title="${hideCompleted ? '顯示本項作業已完成的座號' : '隱藏本項作業已完成的座號'}"
+                                                class="px-2 py-1 rounded-lg border text-[11px] font-bold transition inline-flex items-center gap-1 ${hideCompleted ? 'bg-[#486D88] text-[#FAF8F5] border-[#3A5B73]' : 'bg-white hover:bg-[#EAE6DD] text-[#524E47] border-[#D8D2C6]'}">
+                                            <i data-lucide="${hideCompleted ? 'eye' : 'eye-off'}" class="w-3 h-3"></i>${hideCompleted ? '顯示已完成' : '隱藏已完成'}
+                                        </button>
+                                    </div>
+                                    <div class="flex items-center gap-1 ml-auto">
+                                        <span class="text-[10px] font-bold text-[#88837A] mr-0.5 hidden sm:inline">全班：</span>
+                                        <button onclick="batchSetAssignmentStatus('${hw.id}', 'unsubmitted')" title="將本項作業全班一鍵設為未交"
+                                                class="px-2 py-1 rounded-lg bg-[#E4E0D8] hover:bg-[#D8D3C9] text-[#4E4A43] border border-[#C6C0B4] text-[11px] font-bold transition">
+                                            未交
+                                        </button>
+                                        <button onclick="batchSetAssignmentStatus('${hw.id}', 'correction')" title="將本項作業全班一鍵設為待訂正"
+                                                class="px-2 py-1 rounded-lg bg-[#F9E3B4] hover:bg-[#F3D596] text-[#7D5718] border border-[#E6C17A] text-[11px] font-bold transition">
+                                            待訂正
+                                        </button>
+                                        <button onclick="batchSetAssignmentStatus('${hw.id}', 'completed')" title="將本項作業全班一鍵設為完成"
+                                                class="px-2 py-1 rounded-lg bg-[#CBE4D1] hover:bg-[#B8D9C0] text-[#2F5D3D] border border-[#96C2A2] text-[11px] font-bold transition">
+                                            完成
+                                        </button>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        <!-- 卡片內部：直接且緊湊地排列學生方格 -->
+                        <div class="p-3 sm:p-3.5 flex-1 flex flex-col justify-center">
+                            ${totalStudents === 0 ? `
+                                <div class="py-6 text-center space-y-2">
+                                    <p class="text-xs font-bold text-[#7D786F]">尚未建立任何學生座號</p>
+                                    <button onclick="openSettingsModal()" class="px-3.5 py-1.5 rounded-xl bg-[#68645D] hover:bg-[#56524B] text-[#FAF8F5] text-xs font-bold transition inline-flex items-center gap-1">
+                                        <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> 前往建立座號
+                                    </button>
+                                </div>
+                            ` : (allDone && hideCompleted ? `
+                                <div class="py-8 text-center text-[#5D7463] font-bold text-sm flex flex-col items-center justify-center gap-1.5">
+                                    <i data-lucide="check-circle-2" class="w-7 h-7"></i>
+                                    <span>🎉 全班已完成！</span>
+                                    <span class="text-xs font-medium text-[#88837A]">（已開啟隱藏已完成座號）</span>
+                                </div>
+                            ` : `
+                                <div class="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                                    ${studentCellsHtml}
+                                </div>
+                            `)}
+                        </div>
+                    </section>
+                `;
+            }).join('');
+
+            container.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-5 items-stretch">${cardsHtml}</div>`;
+        }
+
+        function renderSeatsListView(container) {
+            if (appState.students.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-[#FAF8F5] rounded-3xl border-2 border-dashed border-[#D1CCC2] p-10 text-center max-w-lg mx-auto my-8 space-y-4">
+                        <div class="w-14 h-14 rounded-2xl bg-[#E6E9EC] text-[#6B7E8C] flex items-center justify-center mx-auto">
+                            <i data-lucide="users" class="w-7 h-7"></i>
+                        </div>
+                        <h2 class="text-xl font-extrabold text-[#3E3B36]">尚未建立任何學生座號</h2>
+                        <p class="text-sm text-[#7D786F]">請先點擊下方按鈕新增座號（支援跳號），系統將自動以表格分類統計每位學生的未交、待訂正與逾期作業。</p>
+                        <button onclick="openSettingsModal()" class="px-5 py-2.5 rounded-xl bg-[#68645D] hover:bg-[#56524B] text-[#FAF8F5] font-bold text-sm shadow-xs transition inline-flex items-center gap-1.5">
+                            <i data-lucide="user-plus" class="w-4 h-4"></i> 建立座號名單
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+            const hideAllDone = appState.settings.hideAllDoneInSeats;
+
+            // 輔助函式：渲染單一欄位內的作業膠囊按鈕
+            const renderCellChips = (items, stId, showStatusTag = false) => {
+                if (items.length === 0) {
+                    return `<span class="text-xs text-[#C5BFB3] select-none">—</span>`;
+                }
+                return `<div class="flex flex-wrap gap-1.5">` + items.map(hw => {
+                    const effStatus = getEffectiveStatus(hw, stId);
+                    const cfg = STATUS_CONFIG[effStatus];
+                    const rec = getStudentRecord(hw, stId);
+                    return `
+                        <button onclick="toggleStudentStatus('${hw.id}', '${stId}')"
+                                title="點擊切換狀態（目前：${cfg.label}${rec.submittedAt ? '｜繳交：' + rec.submittedAt : ''}）"
+                                class="seat-btn inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border ${cfg.badgeClass} transition shadow-2xs text-left">
+                            <span class="font-bold">${escapeHtml(hw.title)}</span>
+                            ${showStatusTag ? `<span class="text-[10px] font-extrabold px-1 py-0.2 rounded bg-black/5 whitespace-nowrap">(${cfg.label})</span>` : ''}
+                        </button>
+                    `;
+                }).join('') + `</div>`;
+            };
+
+            const tableRowsHtml = appState.students.map(st => {
+                const unsubmittedList = [];
+                const correctionList = [];
+                const overdueList = [];
+
+                sortedAssignments.forEach(hw => {
+                    const eff = getEffectiveStatus(hw, st.id);
+                    if (eff === 'unsubmitted') unsubmittedList.push(hw);
+                    else if (eff === 'correction') correctionList.push(hw);
+                    else if (isOverdueStatus(eff)) overdueList.push(hw);
+                });
+
+                const totalPending = unsubmittedList.length + correctionList.length + overdueList.length;
+                const isAllDone = sortedAssignments.length > 0 && totalPending === 0;
+
+                if (hideAllDone && isAllDone) return '';
+
+                const hasOverdue = overdueList.length > 0;
+
+                return `
+                    <tr class="transition ${hasOverdue ? 'bg-[#FAECEB] hover:bg-[#F5DFDD]' : 'hover:bg-[#F2EFE8]'}">
+                        <!-- 欄位 1：座號與姓名 -->
+                        <td class="px-4 py-3.5 align-top whitespace-nowrap">
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm border shrink-0 ${hasOverdue ? 'bg-[#C94A46] text-[#FAF8F5] border-[#9E312E] shadow-2xs' : (isAllDone ? 'bg-[#CBE4D1] text-[#2F5D3D] border-[#96C2A2]' : 'bg-[#EAE6DD] text-[#524E47] border-[#D1CCC2]')}">
+                                    ${st.number}
+                                </span>
+                                <div>
+                                    <div class="font-extrabold text-[#3E3B36] text-sm">${st.name ? escapeHtml(st.name) : `${st.number} 號`}</div>
+                                    ${sortedAssignments.length > 0 ? `
+                                        <button onclick="openStudentTimeLogModal('${st.id}')" class="text-[11px] font-bold text-[#486D88] hover:underline inline-flex items-center gap-0.5 mt-0.5">
+                                            <i data-lucide="clock" class="w-3 h-3"></i>時間明細
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </td>
+
+                        <!-- 欄位 2：未交 -->
+                        <td class="px-4 py-3.5 align-top">
+                            ${renderCellChips(unsubmittedList, st.id, false)}
+                        </td>
+
+                        <!-- 欄位 3：待訂正 -->
+                        <td class="px-4 py-3.5 align-top">
+                            ${renderCellChips(correctionList, st.id, false)}
+                        </td>
+
+                        <!-- 欄位 4：逾期（含逾期未交與逾期待訂正） -->
+                        <td class="px-4 py-3.5 align-top">
+                            ${renderCellChips(overdueList, st.id, true)}
+                        </td>
+
+                        <!-- 欄位 5：個人數量統計（未交、待訂正與逾期數量） -->
+                        <td class="px-4 py-3.5 align-top whitespace-nowrap">
+                            ${sortedAssignments.length === 0 ? `
+                                <span class="text-xs text-[#88837A]">尚無作業</span>
+                            ` : `
+                                <div class="flex flex-wrap items-center gap-1.5 text-xs font-extrabold">
+                                    <span class="px-2 py-1 rounded-lg bg-[#E4E0D8] border border-[#C6C0B4] text-[#4E4A43]">未交 ${unsubmittedList.length}</span>
+                                    <span class="px-2 py-1 rounded-lg bg-[#F9E3B4] border border-[#E6C17A] text-[#7D5718]">待訂正 ${correctionList.length}</span>
+                                    <span class="px-2 py-1 rounded-lg bg-[#F6D0CE] border border-[#E09B97] text-[#8F2D2A]">逾期 ${overdueList.length}</span>
+                                    ${isAllDone ? `<span class="px-2 py-1 rounded-lg bg-[#CBE4D1] border border-[#96C2A2] text-[#2F5D3D]">完成 ✓</span>` : ''}
+                                </div>
+                            `}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="bg-[#FAF8F5] rounded-3xl border border-[#DDD8CE] shadow-2xs overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse min-w-[760px]">
+                            <thead>
+                                <tr class="bg-[#EFECE5] border-b border-[#DDD7CB] text-xs font-extrabold text-[#5C574F] uppercase tracking-wider">
+                                    <th class="px-4 py-3.5 w-40">座號 / 姓名</th>
+                                    <th class="px-4 py-3.5 w-1/4">
+                                        <span class="inline-flex items-center gap-1.5 text-[#4E4A43]">
+                                            <span class="w-2.5 h-2.5 rounded-full bg-[#7A746B]"></span>未交
+                                        </span>
+                                    </th>
+                                    <th class="px-4 py-3.5 w-1/4">
+                                        <span class="inline-flex items-center gap-1.5 text-[#7D5718]">
+                                            <span class="w-2.5 h-2.5 rounded-full bg-[#D99B26]"></span>待訂正
+                                        </span>
+                                    </th>
+                                    <th class="px-4 py-3.5 w-1/4">
+                                        <span class="inline-flex items-center gap-1.5 text-[#8F2D2A]">
+                                            <span class="w-2.5 h-2.5 rounded-full bg-[#C94A46]"></span>逾期（未交 / 待訂正）
+                                        </span>
+                                    </th>
+                                    <th class="px-4 py-3.5 w-56">個人數量統計</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-[#E5E0D6]">
+                                ${tableRowsHtml || `
+                                    <tr>
+                                        <td colspan="5" class="p-10 text-center text-[#5D7463] font-bold text-sm">
+                                            🎉 全班所有座號皆已完成全部作業！
+                                        </td>
+                                    </tr>
+                                `}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPosterView(container) {
+            const overdueAssignments = [];
+            const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+            sortedAssignments.forEach(hw => {
+                const overdueStudents = appState.students
+                    .map(st => ({ student: st, effStatus: getEffectiveStatus(hw, st.id) }))
+                    .filter(item => isOverdueStatus(item.effStatus));
+
+                if (overdueStudents.length > 0) {
+                    overdueAssignments.push({
+                        assignment: hw,
+                        items: overdueStudents,
+                        daysOverdue: getDaysDiff(referenceDate, hw.dueDate)
+                    });
+                }
+            });
+
+            if (overdueAssignments.length === 0) {
+                container.innerHTML = `
+                    <div id="posterBoard" class="bg-[#FAF8F5] rounded-3xl border-2 border-[#BCC9BF] p-10 sm:p-16 text-center shadow-2xs max-w-3xl mx-auto my-6">
+                        <div class="w-20 h-20 rounded-full bg-[#DCE4DE] text-[#5D7463] flex items-center justify-center mx-auto mb-5">
+                            <i data-lucide="party-popper" class="w-10 h-10"></i>
+                        </div>
+                        <h2 class="text-3xl sm:text-4xl font-black text-[#3E3B36] mb-3">太棒了！目前沒有任何逾期作業</h2>
+                        <p class="text-base sm:text-lg text-[#7D786F] font-medium">截至基準日 <span class="font-bold text-[#524E47]">${referenceDate}</span>，所有已到期的作業皆已全數訂正完成！</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const posterCardsHtml = overdueAssignments.map(group => {
+                const { assignment, items, daysOverdue } = group;
+                const studentBadgesHtml = items.map(({ student: st, effStatus }) => {
+                    const isCorr = effStatus === 'overdue_correction';
+                    const subLabel = isCorr ? '逾期待訂正' : '逾期未交';
+                    const cardStyle = isCorr
+                        ? 'bg-[#D65C47] hover:bg-[#C24D39] border-[#E8B85D] ring-2 ring-[#F9E3B4]'
+                        : 'bg-[#C94A46] hover:bg-[#B53D39] border-[#9E312E]';
+
+                    return `
+                        <button onclick="toggleStudentStatus('${assignment.id}', '${st.id}')" 
+                                title="點擊切換狀態（核銷後將自動從大字報移除）"
+                                class="seat-btn ${cardStyle} text-[#FAF8F5] rounded-2xl px-4 py-3 sm:px-5 sm:py-3.5 flex flex-col items-center justify-center shadow-sm border-2 min-w-[5.8rem] sm:min-w-[7rem]">
+                            <span class="text-3xl sm:text-4xl lg:text-5xl font-black leading-none tracking-tight">${st.number}</span>
+                            ${st.name ? `<span class="text-sm sm:text-base font-bold mt-1 opacity-95">${escapeHtml(st.name)}</span>` : ''}
+                            <span class="text-[11px] sm:text-xs font-extrabold mt-1.5 px-2 py-0.5 rounded-md ${isCorr ? 'bg-[#F9E3B4] text-[#6E490D]' : 'bg-black/20 text-[#FAF8F5]'}">${subLabel}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="bg-[#FAF8F5] rounded-3xl border-4 border-[#C94A46] shadow-sm overflow-hidden">
+                        <div class="bg-[#C94A46] text-[#FAF8F5] px-5 py-4 sm:px-7 sm:py-5 flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <span class="bg-[#FAF8F5] text-[#8F2D2A] font-black text-sm sm:text-base px-3 py-1 rounded-xl shadow-2xs">
+                                    已逾期 ${daysOverdue} 天
+                                </span>
+                                <h3 class="text-2xl sm:text-3xl font-black tracking-tight">${escapeHtml(assignment.title)}</h3>
+                            </div>
+                            <div class="text-sm sm:text-base font-bold bg-[#9E312E]/80 px-3.5 py-1.5 rounded-xl">
+                                期限：${assignment.dueDate} ｜ 尚缺 <span class="text-[#FCE3AD] text-lg sm:text-xl font-black">${items.length}</span> 人
+                            </div>
+                        </div>
+                        <div class="p-5 sm:p-7 bg-[#FAECEB]">
+                            <div class="flex flex-wrap gap-3 sm:gap-4">
+                                ${studentBadgesHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <div id="posterBoard" class="space-y-6">
+                    <div class="bg-[#F6D0CE] border-2 border-[#E09B97] rounded-2xl px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 text-[#7A2320]">
+                        <div class="flex items-center gap-2.5 font-extrabold text-base sm:text-lg">
+                            <i data-lucide="alert-octagon" class="w-6 h-6 text-[#C94A46] shrink-0"></i>
+                            <span>逾期未完成催繳大字報（基準日：${referenceDate}）</span>
+                        </div>
+                        <span class="text-xs sm:text-sm font-bold text-[#8F2D2A]">提示：點擊座號可直接核銷狀態並記錄完成時間</span>
+                    </div>
+                    ${posterCardsHtml}
+                </div>
+            `;
+        }
+
+        function togglePosterFullscreen() {
+            const posterEl = document.getElementById('posterBoard');
+            if (!posterEl) return;
+            if (!document.fullscreenElement) {
+                posterEl.requestFullscreen().catch(() => {
+                    showToast('瀏覽器不支援全螢幕模式，已為您直接放大顯示', 'info');
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 繳交時間與完成時間檢視與手動修改 Modal 邏輯
+         * ============================================================================
+         */
+        let currentTimeLogContext = null; // { mode: 'assignment' | 'student', id: string }
+
+        function openGlobalTimeLogModal() {
+            if (appState.assignments.length === 0 && appState.students.length === 0) {
+                showToast('目前尚無作業或座號資料可供查詢時間記錄', 'info');
+                return;
+            }
+            if (appState.assignments.length > 0) {
+                const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+                openAssignmentTimeLogModal(sortedAssignments[0].id);
+            } else if (appState.students.length > 0) {
+                openStudentTimeLogModal(appState.students[0].id);
+            }
+        }
+
+        function openAssignmentTimeLogModal(assignmentId) {
+            currentTimeLogContext = { mode: 'assignment', id: assignmentId };
+            renderTimeLogModalContent();
+            document.getElementById('timeLogModal').classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function openStudentTimeLogModal(studentId) {
+            currentTimeLogContext = { mode: 'student', id: studentId };
+            renderTimeLogModalContent();
+            document.getElementById('timeLogModal').classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function closeTimeLogModal() {
+            document.getElementById('timeLogModal').classList.add('hidden');
+            currentTimeLogContext = null;
+            renderApp();
+        }
+
+        function renderTimeLogFilterBar() {
+            const filterBar = document.getElementById('timeLogFilterBar');
+            if (!filterBar || !currentTimeLogContext) return;
+
+            const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+            const archivedList = Array.isArray(appState.archivedAssignments) ? appState.archivedAssignments : [];
+            const sortedStudents = [...appState.students].sort((a, b) => a.number - b.number);
+
+            const hwOptions = sortedAssignments.map(hw => 
+                `<option value="${hw.id}" ${currentTimeLogContext.mode === 'assignment' && currentTimeLogContext.id === hw.id ? 'selected' : ''}>作業：${escapeHtml(hw.title)} (${hw.dueDate})</option>`
+            ).join('');
+
+            const archivedOptions = archivedList.map(hw => 
+                `<option value="${hw.id}" ${currentTimeLogContext.mode === 'assignment' && currentTimeLogContext.id === hw.id ? 'selected' : ''}>[已封存] ${escapeHtml(hw.title)} (${hw.dueDate})</option>`
+            ).join('');
+
+            const stOptions = sortedStudents.map(st => 
+                `<option value="${st.id}" ${currentTimeLogContext.mode === 'student' && currentTimeLogContext.id === st.id ? 'selected' : ''}>座號：${st.number}號 ${st.name ? escapeHtml(st.name) : ''}</option>`
+            ).join('');
+
+            filterBar.innerHTML = `
+                <span class="font-bold text-slate-600">快速切換查詢對象：</span>
+                ${(sortedAssignments.length > 0 || archivedList.length > 0) ? `
+                    <select onchange="openAssignmentTimeLogModal(this.value)" class="px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700 focus:border-indigo-500 outline-none">
+                        ${currentTimeLogContext.mode !== 'assignment' ? '<option value="" disabled selected>依作業項目查詢...</option>' : ''}
+                        ${hwOptions}
+                        ${archivedOptions}
+                    </select>
+                ` : ''}
+                ${sortedStudents.length > 0 ? `
+                    <select onchange="openStudentTimeLogModal(this.value)" class="px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-700 focus:border-indigo-500 outline-none">
+                        ${currentTimeLogContext.mode !== 'student' ? '<option value="" disabled selected>依學生座號查詢...</option>' : ''}
+                        ${stOptions}
+                    </select>
+                ` : ''}
+            `;
+        }
+
+        function renderTimeLogModalContent() {
+            if (!currentTimeLogContext) return;
+            renderTimeLogFilterBar();
+            const titleEl = document.getElementById('timeLogModalTitle');
+            const subEl = document.getElementById('timeLogModalSubtitle');
+            const bodyEl = document.getElementById('timeLogModalBody');
+
+            if (currentTimeLogContext.mode === 'assignment') {
+                const archivedList = Array.isArray(appState.archivedAssignments) ? appState.archivedAssignments : [];
+                const hw = appState.assignments.find(a => a.id === currentTimeLogContext.id) || archivedList.find(a => a.id === currentTimeLogContext.id);
+                if (!hw) return;
+                const isArchived = Boolean(hw.deletedAt);
+                titleEl.innerHTML = `<i data-lucide="clock" class="w-5 h-5 text-indigo-600"></i><span>${isArchived ? '[已封存] ' : ''}${escapeHtml(hw.title)} — 時間記錄</span>`;
+                subEl.textContent = `繳交期限：${hw.dueDate}${isArchived ? '｜封存時間：' + hw.deletedAt : ''}｜可隨時查詢或修改每位學生的繳交時間與完成時間`;
+
+                const sortedStudents = [...appState.students].sort((a, b) => a.number - b.number);
+                bodyEl.innerHTML = sortedStudents.length > 0 ? sortedStudents.map(st => {
+                    const rec = getStudentRecord(hw, st.id);
+                    const effStatus = isArchived
+                        ? (rec.status === 'completed' ? 'completed' : (rec.status === 'correction' ? 'correction' : 'unsubmitted'))
+                        : getEffectiveStatus(hw, st.id);
+                    const cfg = STATUS_CONFIG[effStatus];
+                    return buildTimeLogRowHtml(
+                        `${st.number}號 ${st.name ? escapeHtml(st.name) : ''}`,
+                        cfg,
+                        hw.id,
+                        st.id,
+                        rec
+                    );
+                }).join('') : `<div class="p-6 text-center text-xs text-slate-400">尚未建立任何學生座號</div>`;
+            } else {
+                const st = appState.students.find(s => s.id === currentTimeLogContext.id);
+                if (!st) return;
+                titleEl.innerHTML = `<i data-lucide="clock" class="w-5 h-5 text-indigo-600"></i><span>${st.number}號 ${st.name ? escapeHtml(st.name) : ''} — 時間記錄</span>`;
+                subEl.textContent = `共 ${appState.assignments.length} 項作業｜可隨時查詢或修改各項作業的繳交與完成時間`;
+
+                const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+                bodyEl.innerHTML = sortedAssignments.length > 0 ? sortedAssignments.map(hw => {
+                    const rec = getStudentRecord(hw, st.id);
+                    const effStatus = getEffectiveStatus(hw, st.id);
+                    const cfg = STATUS_CONFIG[effStatus];
+                    return buildTimeLogRowHtml(
+                        `${escapeHtml(hw.title)} (期限 ${hw.dueDate})`,
+                        cfg,
+                        hw.id,
+                        st.id,
+                        rec
+                    );
+                }).join('') : `<div class="p-6 text-center text-xs text-slate-400">尚未建立任何作業項目</div>`;
+            }
+        }
+
+        function buildTimeLogRowHtml(rowLabel, statusCfg, hwId, stId, rec) {
+            const subInputVal = rec.submittedAt ? rec.submittedAt.replace(' ', 'T') : '';
+            const compInputVal = rec.completedAt ? rec.completedAt.replace(' ', 'T') : '';
+
+            return `
+                <div class="p-3.5 rounded-2xl bg-[#EFECE5] border border-[#DDD7CB] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-[140px]">
+                        <span class="px-2 py-0.5 rounded-lg text-xs font-extrabold border ${statusCfg.badgeClass}">${statusCfg.label}</span>
+                        <span class="font-bold text-sm text-[#3E3B36]">${rowLabel}</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <div class="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-xl border border-[#D8D2C6]">
+                            <span class="font-bold text-[#78613E]">繳交：</span>
+                            <input type="datetime-local" value="${subInputVal}" 
+                                   onchange="updateRecordTimestamp('${hwId}', '${stId}', 'submittedAt', this.value)"
+                                   class="text-[#524E47] font-medium focus:outline-none">
+                            <button type="button" onclick="stampNowTimestamp('${hwId}', '${stId}', 'submittedAt')" title="填入現在時間"
+                                    class="px-1.5 py-0.5 rounded bg-[#EFE2CD] hover:bg-[#E7D6BB] text-[#78613E] font-bold">現在</button>
+                        </div>
+                        <div class="flex items-center gap-1 bg-white px-2.5 py-1.5 rounded-xl border border-[#D8D2C6]">
+                            <span class="font-bold text-[#475D4D]">完成：</span>
+                            <input type="datetime-local" value="${compInputVal}" 
+                                   onchange="updateRecordTimestamp('${hwId}', '${stId}', 'completedAt', this.value)"
+                                   class="text-[#524E47] font-medium focus:outline-none">
+                            <button type="button" onclick="stampNowTimestamp('${hwId}', '${stId}', 'completedAt')" title="填入現在時間"
+                                    class="px-1.5 py-0.5 rounded bg-[#DCE4DE] hover:bg-[#CFD9D1] text-[#475D4D] font-bold">現在</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateRecordTimestamp(hwId, stId, field, rawVal) {
+            const archivedList = Array.isArray(appState.archivedAssignments) ? appState.archivedAssignments : [];
+            const hw = appState.assignments.find(a => a.id === hwId) || archivedList.find(a => a.id === hwId);
+            if (!hw) return;
+            const rec = getStudentRecord(hw, stId);
+            rec[field] = rawVal ? rawVal.replace('T', ' ') : null;
+
+            // 若手動填入了完成時間且目前尚未完成，自動將狀態推進為完成
+            if (field === 'completedAt' && rec.completedAt && rec.status !== 'completed') {
+                rec.status = 'completed';
+                if (!rec.submittedAt) rec.submittedAt = rec.completedAt;
+            } else if (field === 'submittedAt' && rec.submittedAt && rec.status === 'unsubmitted') {
+                rec.status = 'correction';
+            }
+
+            saveStateToStorage();
+            renderTimeLogModalContent();
+            if (window.lucide) lucide.createIcons();
+            showToast('時間紀錄已更新並儲存');
+        }
+
+        function stampNowTimestamp(hwId, stId, field) {
+            const nowStr = getCurrentDateTimeString();
+            updateRecordTimestamp(hwId, stId, field, nowStr.replace(' ', 'T'));
+        }
+
+        /**
+         * ============================================================================
+         * 匯出多工作表 Excel (.xlsx) 檔案（支援依作業項目分頁、依座號分頁或彙整總表）
+         * ============================================================================
+         */
+        function openExportExcelModal() {
+            if (appState.students.length === 0 && appState.assignments.length === 0) {
+                showToast('目前尚無資料可供匯出，請先新增座號與作業項目', 'error');
+                return;
+            }
+            document.getElementById('exportExcelModal').classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function closeExportExcelModal() {
+            document.getElementById('exportExcelModal').classList.add('hidden');
+        }
+
+        // 清理 Excel 工作表名稱（移除非法字元 \ / ? * [ ] : 並限制 31 字元以內，避免重複）
+        function makeSafeSheetName(rawName, usedNamesSet) {
+            let cleaned = String(rawName || '工作表')
+                .replace(/[\\\/\?\*\[\]\:]/g, '_')
+                .trim();
+            if (!cleaned) cleaned = '工作表';
+            let base = cleaned.slice(0, 28);
+            let candidate = cleaned.slice(0, 31);
+            let counter = 2;
+            while (usedNamesSet.has(candidate)) {
+                candidate = `${base}_${counter}`;
+                counter++;
+            }
+            usedNamesSet.add(candidate);
+            return candidate;
+        }
+
+        function exportToExcel(mode = 'summary') {
+            if (typeof XLSX === 'undefined') {
+                showToast('Excel 匯出元件載入中，請稍後再試', 'error');
+                return;
+            }
+            if (appState.students.length === 0 && appState.assignments.length === 0) {
+                showToast('目前尚無資料可供匯出，請先新增座號與作業項目', 'error');
+                return;
+            }
+
+            closeExportExcelModal();
+
+            const sortedStudents = [...appState.students].sort((a, b) => a.number - b.number);
+            const sortedAssignments = [...appState.assignments].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+            const wb = XLSX.utils.book_new();
+            const usedSheetNames = new Set();
+
+            // 共用統計摘要工作表（各作業統計）
+            const buildAssignmentSummarySheet = () => {
+                const rows = [['作業名稱', '繳交期限', '班級總人數', '已完成人數', '待訂正人數', '未交人數', '逾期未交人數', '逾期待訂正人數', '完成率']];
+                sortedAssignments.forEach(hw => {
+                    let comp = 0, corr = 0, unsub = 0, overUnsub = 0, overCorr = 0;
+                    sortedStudents.forEach(st => {
+                        const eff = getEffectiveStatus(hw, st.id);
+                        if (eff === 'completed') comp++;
+                        else if (eff === 'overdue_unsubmitted') overUnsub++;
+                        else if (eff === 'overdue_correction') overCorr++;
+                        else if (eff === 'correction') corr++;
+                        else unsub++;
+                    });
+                    const rate = sortedStudents.length > 0 ? `${Math.round((comp / sortedStudents.length) * 100)}%` : '0%';
+                    rows.push([hw.title, hw.dueDate, sortedStudents.length, comp, corr, unsub, overUnsub, overCorr, rate]);
+                });
+                return XLSX.utils.aoa_to_sheet(rows);
+            };
+
+            let fileName = `班級作業與訂正紀錄_${referenceDate}.xlsx`;
+
+            if (mode === 'byAssignment') {
+                // 1. 依「作業項目」分別建立獨立工作表
+                XLSX.utils.book_append_sheet(wb, buildAssignmentSummarySheet(), makeSafeSheetName('各項目統計總表', usedSheetNames));
+
+                if (sortedAssignments.length === 0) {
+                    showToast('目前尚無作業項目可分頁匯出', 'error');
+                    return;
+                }
+
+                sortedAssignments.forEach(hw => {
+                    const sheetRows = [
+                        [`作業名稱：${hw.title}`, `繳交期限：${hw.dueDate}`, `匯出基準日：${referenceDate}`],
+                        [],
+                        ['座號', '姓名', '目前狀態', '繳交時間', '完成時間']
+                    ];
+                    sortedStudents.forEach(st => {
+                        const rec = getStudentRecord(hw, st.id);
+                        const eff = getEffectiveStatus(hw, st.id);
+                        sheetRows.push([
+                            st.number,
+                            st.name || '',
+                            STATUS_CONFIG[eff].label,
+                            rec.submittedAt || '',
+                            rec.completedAt || ''
+                        ]);
+                    });
+                    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+                    XLSX.utils.book_append_sheet(wb, ws, makeSafeSheetName(hw.title, usedSheetNames));
+                });
+
+                fileName = `班級作業紀錄_依作業項目分頁_${referenceDate}.xlsx`;
+
+            } else if (mode === 'byStudent') {
+                // 2. 依「座號」分別建立獨立工作表
+                if (sortedStudents.length === 0) {
+                    showToast('目前尚無學生座號可分頁匯出', 'error');
+                    return;
+                }
+
+                // 先放一張個人欠交統計總表
+                const studentSummaryRows = [['座號', '姓名', '總作業數', '已完成數', '未交數', '待訂正數', '逾期數']];
+                sortedStudents.forEach(st => {
+                    let comp = 0, unsub = 0, corr = 0, over = 0;
+                    sortedAssignments.forEach(hw => {
+                        const eff = getEffectiveStatus(hw, st.id);
+                        if (eff === 'completed') comp++;
+                        else if (isOverdueStatus(eff)) over++;
+                        else if (eff === 'correction') corr++;
+                        else unsub++;
+                    });
+                    studentSummaryRows.push([st.number, st.name || '', sortedAssignments.length, comp, unsub, corr, over]);
+                });
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(studentSummaryRows), makeSafeSheetName('個人統計總表', usedSheetNames));
+
+                // 為每一位座號建立專屬工作表
+                sortedStudents.forEach(st => {
+                    const titleLabel = st.name ? `${st.number}號_${st.name}` : `${st.number}號`;
+                    const sheetRows = [
+                        [`座號：${st.number} 號`, `姓名：${st.name || '未填寫'}`, `匯出基準日：${referenceDate}`],
+                        [],
+                        ['作業名稱', '繳交期限', '目前狀態', '繳交時間', '完成時間']
+                    ];
+                    sortedAssignments.forEach(hw => {
+                        const rec = getStudentRecord(hw, st.id);
+                        const eff = getEffectiveStatus(hw, st.id);
+                        sheetRows.push([
+                            hw.title,
+                            hw.dueDate,
+                            STATUS_CONFIG[eff].label,
+                            rec.submittedAt || '',
+                            rec.completedAt || ''
+                        ]);
+                    });
+                    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+                    XLSX.utils.book_append_sheet(wb, ws, makeSafeSheetName(titleLabel, usedSheetNames));
+                });
+
+                fileName = `班級作業紀錄_依座號分頁_${referenceDate}.xlsx`;
+
+            } else {
+                // 3. 彙整總表模式（工作表 1：作業總表矩陣、工作表 2：時間明細、工作表 3：統計摘要）
+                const sheet1Header = ['座號', '姓名', ...sortedAssignments.map(hw => `${hw.title} (${hw.dueDate})`)];
+                const sheet1Rows = [sheet1Header];
+                sortedStudents.forEach(st => {
+                    const row = [st.number, st.name || ''];
+                    sortedAssignments.forEach(hw => {
+                        const eff = getEffectiveStatus(hw, st.id);
+                        row.push(STATUS_CONFIG[eff].label);
+                    });
+                    sheet1Rows.push(row);
+                });
+
+                const sheet2Rows = [['座號', '姓名', '作業名稱', '繳交期限', '目前狀態', '繳交時間', '完成時間']];
+                sortedStudents.forEach(st => {
+                    sortedAssignments.forEach(hw => {
+                        const rec = getStudentRecord(hw, st.id);
+                        const eff = getEffectiveStatus(hw, st.id);
+                        sheet2Rows.push([
+                            st.number,
+                            st.name || '',
+                            hw.title,
+                            hw.dueDate,
+                            STATUS_CONFIG[eff].label,
+                            rec.submittedAt || '',
+                            rec.completedAt || ''
+                        ]);
+                    });
+                });
+
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet1Rows), makeSafeSheetName('作業總表(狀態)', usedSheetNames));
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet2Rows), makeSafeSheetName('繳交與完成時間明細', usedSheetNames));
+                XLSX.utils.book_append_sheet(wb, buildAssignmentSummarySheet(), makeSafeSheetName('各項目統計摘要', usedSheetNames));
+
+                fileName = `班級作業與訂正紀錄_${referenceDate}.xlsx`;
+            }
+
+            XLSX.writeFile(wb, fileName);
+            showToast(`已成功匯出 Excel 檔案：${fileName}`);
+        }
+
+        /**
+         * ============================================================================
+         * 作業項目新增、編輯與刪除 Modal 控制
+         * ============================================================================
+         */
+        function openAssignmentModal(assignmentId = null) {
+            const modal = document.getElementById('assignmentModal');
+            const titleEl = document.getElementById('assignmentModalTitle');
+            const idInput = document.getElementById('editAssignmentId');
+            const nameInput = document.getElementById('assignmentTitleInput');
+            const dateInput = document.getElementById('assignmentDueDateInput');
+
+            if (assignmentId) {
+                const hw = appState.assignments.find(a => a.id === assignmentId);
+                if (!hw) return;
+                titleEl.textContent = '編輯作業項目';
+                idInput.value = hw.id;
+                nameInput.value = hw.title;
+                dateInput.value = hw.dueDate;
+            } else {
+                titleEl.textContent = '新增作業項目';
+                idInput.value = '';
+                nameInput.value = '';
+                dateInput.value = referenceDate;
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => nameInput.focus(), 50);
+        }
+
+        function closeAssignmentModal() {
+            document.getElementById('assignmentModal').classList.add('hidden');
+        }
+
+        document.getElementById('assignmentForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const id = document.getElementById('editAssignmentId').value.trim();
+            const title = document.getElementById('assignmentTitleInput').value.trim();
+            const dueDate = document.getElementById('assignmentDueDateInput').value;
+
+            if (!title || !dueDate) return;
+
+            if (id) {
+                const hw = appState.assignments.find(a => a.id === id);
+                if (hw) {
+                    hw.title = title;
+                    hw.dueDate = dueDate;
+                    showToast('作業項目已更新！');
+                }
+            } else {
+                const records = {};
+                appState.students.forEach(st => {
+                    records[st.id] = { status: 'unsubmitted', submittedAt: null, completedAt: null };
+                });
+                appState.assignments.push({
+                    id: 'hw_' + Date.now(),
+                    title,
+                    dueDate,
+                    records
+                });
+                showToast('已新增作業項目！');
+            }
+
+            saveStateToStorage();
+            closeAssignmentModal();
+            renderApp();
+        });
+
+        function openDeleteModal(assignmentId) {
+            const hw = appState.assignments.find(a => a.id === assignmentId);
+            if (!hw) return;
+            pendingDeleteId = assignmentId;
+            document.getElementById('deleteTargetName').textContent = `${hw.title}（期限：${hw.dueDate}）`;
+            document.getElementById('deleteConfirmModal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            pendingDeleteId = null;
+            document.getElementById('deleteConfirmModal').classList.add('hidden');
+        }
+
+        document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+            if (!pendingDeleteId) return;
+            const targetHw = appState.assignments.find(a => a.id === pendingDeleteId);
+            if (targetHw) {
+                if (!Array.isArray(appState.archivedAssignments)) {
+                    appState.archivedAssignments = [];
+                }
+                // 深拷貝並加上封存時間戳記，確保資料完整留存
+                const archivedCopy = JSON.parse(JSON.stringify(targetHw));
+                archivedCopy.deletedAt = getCurrentDateTimeString();
+                appState.archivedAssignments.unshift(archivedCopy);
+            }
+            appState.assignments = appState.assignments.filter(a => a.id !== pendingDeleteId);
+            saveStateToStorage();
+            closeDeleteModal();
+            renderApp();
+            showToast('作業已從看板移除，完整資料已封存至「已刪除作業留存紀錄」');
+        });
+
+        /**
+         * ============================================================================
+         * 座號名單管理 (支援跳號、編輯、刪除、範例資料、JSON 備份與清空)
+         * ============================================================================
+         */
+        function openSettingsModal() {
+            const roomInput = document.getElementById('cloudRoomCodeInput');
+            if (roomInput && window.cloudSyncBridge) {
+                roomInput.value = window.cloudSyncBridge.getRoomCode();
+            }
+            renderModalStudentList();
+            renderModalArchivedList();
+            document.getElementById('settingsModal').classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.add('hidden');
+            renderApp();
+        }
+
+        // 渲染已刪除作業封存留存清單
+        function renderModalArchivedList() {
+            const archivedList = Array.isArray(appState.archivedAssignments) ? appState.archivedAssignments : [];
+            const badge = document.getElementById('modalArchivedCountBadge');
+            const listEl = document.getElementById('modalArchivedListContainer');
+            if (!badge || !listEl) return;
+
+            badge.textContent = `已封存 ${archivedList.length} 項`;
+
+            if (archivedList.length === 0) {
+                listEl.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">目前尚無已刪除的作業留存紀錄。當您從看板刪除作業時，系統會自動將紀錄完整封存於此處。</div>`;
+                return;
+            }
+
+            listEl.innerHTML = archivedList.map(hw => {
+                let compCount = 0;
+                appState.students.forEach(st => {
+                    if (getStudentRecord(hw, st.id).status === 'completed') compCount++;
+                });
+
+                return `
+                    <div class="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50">
+                        <div class="min-w-0">
+                            <div class="font-extrabold text-sm text-[#3E3B36] truncate">${escapeHtml(hw.title)}</div>
+                            <div class="text-[11px] text-[#7D786F] mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                <span>原期限：${hw.dueDate}</span>
+                                <span>封存時間：${hw.deletedAt || '未知'}</span>
+                                <span class="text-[#475D4D] font-bold">當時完成：${compCount} / ${appState.students.length} 人</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button type="button" onclick="viewArchivedTimeLog('${hw.id}')"
+                                    class="px-2.5 py-1.5 rounded-lg bg-[#DCE6EE] hover:bg-[#CEDCE7] text-[#335269] text-xs font-bold transition inline-flex items-center gap-1">
+                                <i data-lucide="clock" class="w-3.5 h-3.5"></i>檢視明細
+                            </button>
+                            <button type="button" onclick="restoreArchivedAssignment('${hw.id}')"
+                                    class="px-2.5 py-1.5 rounded-lg bg-[#CBE4D1] hover:bg-[#B8D9C0] text-[#2F5D3D] text-xs font-bold transition inline-flex items-center gap-1">
+                                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>還原至看板
+                            </button>
+                            <button type="button" onclick="exportSingleArchivedExcel('${hw.id}')"
+                                    class="px-2.5 py-1.5 rounded-lg bg-[#EAE6DD] hover:bg-[#DFDBD0] text-[#524E47] text-xs font-bold transition inline-flex items-center gap-1">
+                                <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5"></i>匯出 Excel
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function viewArchivedTimeLog(archivedId) {
+            closeSettingsModal();
+            openAssignmentTimeLogModal(archivedId);
+        }
+
+        function restoreArchivedAssignment(archivedId) {
+            if (!Array.isArray(appState.archivedAssignments)) return;
+            const idx = appState.archivedAssignments.findIndex(a => a.id === archivedId);
+            if (idx === -1) return;
+
+            const restored = appState.archivedAssignments[idx];
+            delete restored.deletedAt;
+            appState.assignments.push(restored);
+            appState.archivedAssignments.splice(idx, 1);
+
+            saveStateToStorage();
+            renderModalArchivedList();
+            showToast(`已將「${restored.title}」還原至主看板！`);
+        }
+
+        function exportSingleArchivedExcel(archivedId) {
+            if (typeof XLSX === 'undefined') {
+                showToast('Excel 匯出元件載入中，請稍後再試', 'error');
+                return;
+            }
+            const archivedList = Array.isArray(appState.archivedAssignments) ? appState.archivedAssignments : [];
+            const hw = archivedList.find(a => a.id === archivedId);
+            if (!hw) return;
+
+            const sortedStudents = [...appState.students].sort((a, b) => a.number - b.number);
+            const wb = XLSX.utils.book_new();
+            const sheetRows = [
+                [`已封存作業名稱：${hw.title}`, `原繳交期限：${hw.dueDate}`, `封存時間：${hw.deletedAt || ''}`],
+                [],
+                ['座號', '姓名', '封存時狀態', '繳交時間', '完成時間']
+            ];
+            sortedStudents.forEach(st => {
+                const rec = getStudentRecord(hw, st.id);
+                const statusLabel = rec.status === 'completed' ? '完成' : (rec.status === 'correction' ? '待訂正' : '未交');
+                sheetRows.push([
+                    st.number,
+                    st.name || '',
+                    statusLabel,
+                    rec.submittedAt || '',
+                    rec.completedAt || ''
+                ]);
+            });
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows), '封存作業明細');
+            const fileName = `已封存作業_${hw.title}_${referenceDate}.xlsx`;
+            XLSX.writeFile(wb, fileName);
+            showToast(`已匯出封存作業 Excel：${fileName}`);
+        }
+
+        function renderModalStudentList() {
+            appState.students.sort((a, b) => a.number - b.number);
+            const badge = document.getElementById('modalStudentCountBadge');
+            const listEl = document.getElementById('modalStudentListContainer');
+            badge.textContent = `目前 ${appState.students.length} 人`;
+
+            if (appState.students.length === 0) {
+                listEl.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">尚未建立任何座號，請使用上方「批次跳號產生器」或「新增單筆」建立學生名單。</div>`;
+                return;
+            }
+
+            listEl.innerHTML = appState.students.map(st => `
+                <div class="px-3 py-2 flex items-center gap-2 hover:bg-slate-50">
+                    <span class="text-xs font-bold text-slate-400 w-10">座號</span>
+                    <input type="number" min="1" max="999" value="${st.number}" 
+                           onchange="updateStudentNumber('${st.id}', this.value)"
+                           class="w-20 px-2.5 py-1 rounded-lg border border-slate-300 text-sm font-extrabold text-slate-800 focus:border-indigo-500 outline-none">
+                    <input type="text" value="${escapeHtml(st.name || '')}" placeholder="輸入姓名 (選填)"
+                           onchange="updateStudentName('${st.id}', this.value)"
+                           class="flex-1 px-2.5 py-1 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 focus:border-indigo-500 outline-none">
+                    <button type="button" onclick="removeStudent('${st.id}')" title="刪除此座號（形成跳號）"
+                            class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            `).join('');
+            if (window.lucide) lucide.createIcons();
+        }
+
+        // 解析跳號與區間字串（例如 "1, 2, 5, 8-12"）
+        function applyBatchSeats() {
+            const raw = document.getElementById('batchSeatInput').value.trim();
+            if (!raw) {
+                showToast('請輸入要產生的座號或區間', 'error');
+                return;
+            }
+
+            const tokens = raw.split(/[,，\s、]+/).filter(Boolean);
+            const numsToAdd = new Set();
+
+            tokens.forEach(tok => {
+                if (tok.includes('-') || tok.includes('~')) {
+                    const parts = tok.split(/[-~]/).map(n => parseInt(n, 10));
+                    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        const start = Math.max(1, Math.min(parts[0], parts[1]));
+                        const end = Math.min(999, Math.max(parts[0], parts[1]));
+                        for (let n = start; n <= end; n++) {
+                            numsToAdd.add(n);
+                        }
+                    }
+                } else {
+                    const n = parseInt(tok, 10);
+                    if (!isNaN(n) && n >= 1 && n <= 999) {
+                        numsToAdd.add(n);
+                    }
+                }
+            });
+
+            if (numsToAdd.size === 0) {
+                showToast('無法辨識有效的座號數字，請檢查格式', 'error');
+                return;
+            }
+
+            let addedCount = 0;
+            const existingNums = new Set(appState.students.map(s => s.number));
+
+            numsToAdd.forEach(num => {
+                if (!existingNums.has(num)) {
+                    const stId = 'st_' + num + '_' + Math.random().toString(36).slice(2, 6);
+                    appState.students.push({ id: stId, number: num, name: '' });
+                    appState.assignments.forEach(hw => {
+                        hw.records[stId] = { status: 'unsubmitted', submittedAt: null, completedAt: null };
+                    });
+                    addedCount++;
+                }
+            });
+
+            document.getElementById('batchSeatInput').value = '';
+            saveStateToStorage();
+            renderModalStudentList();
+            showToast(`已成功加入 ${addedCount} 個新座號！`);
+        }
+
+        function addSingleStudent() {
+            const numInput = document.getElementById('singleSeatNumInput');
+            const nameInput = document.getElementById('singleSeatNameInput');
+            const num = parseInt(numInput.value, 10);
+            const name = nameInput.value.trim();
+
+            if (isNaN(num) || num < 1 || num > 999) {
+                showToast('請輸入 1 到 999 之間的有效座號', 'error');
+                return;
+            }
+            if (appState.students.some(s => s.number === num)) {
+                showToast(`座號 ${num} 號已經存在！`, 'error');
+                return;
+            }
+
+            const stId = 'st_' + num + '_' + Math.random().toString(36).slice(2, 6);
+            appState.students.push({ id: stId, number: num, name });
+            appState.assignments.forEach(hw => {
+                hw.records[stId] = { status: 'unsubmitted', submittedAt: null, completedAt: null };
+            });
+
+            numInput.value = '';
+            nameInput.value = '';
+            saveStateToStorage();
+            renderModalStudentList();
+            showToast(`已新增 ${num} 號${name ? ' (' + name + ')' : ''}`);
+        }
+
+        function updateStudentNumber(studentId, newVal) {
+            const num = parseInt(newVal, 10);
+            if (isNaN(num) || num < 1 || num > 999) {
+                showToast('座號必須為 1~999 的整數', 'error');
+                renderModalStudentList();
+                return;
+            }
+            if (appState.students.some(s => s.id !== studentId && s.number === num)) {
+                showToast(`座號 ${num} 號與其他學生重複！`, 'error');
+                renderModalStudentList();
+                return;
+            }
+            const st = appState.students.find(s => s.id === studentId);
+            if (st) {
+                st.number = num;
+                saveStateToStorage();
+                renderModalStudentList();
+                showToast(`座號已修改為 ${num} 號`);
+            }
+        }
+
+        function updateStudentName(studentId, newName) {
+            const st = appState.students.find(s => s.id === studentId);
+            if (st) {
+                st.name = newName.trim();
+                saveStateToStorage();
+            }
+        }
+
+        function removeStudent(studentId) {
+            appState.students = appState.students.filter(s => s.id !== studentId);
+            appState.assignments.forEach(hw => {
+                delete hw.records[studentId];
+            });
+            saveStateToStorage();
+            renderModalStudentList();
+            showToast('已移除該座號');
+        }
+
+        function clearAllStudentsInModal() {
+            appState.students = [];
+            appState.assignments.forEach(hw => {
+                hw.records = {};
+            });
+            saveStateToStorage();
+            renderModalStudentList();
+            showToast('已清空所有學生座號名單');
+        }
+
+        // 匯入範例資料（包含跳號、三項作業、時間紀錄供測試三欄看板與匯出 Excel）
+        function loadSampleDemoData() {
+            const sampleNums = [1, 2, 3, 5, 6, 8, 9, 10, 12, 14, 15, 18];
+            const sampleNames = ['陳宥廷', '林品妍', '張宇恩', '王語彤', '李承翰', '黃子晴', '吳柏宇', '劉思妤', '蔡竣宇', '楊詠晴', '許哲維', '鄭羽希'];
+            const students = sampleNums.map((num, idx) => ({
+                id: 'st_demo_' + num,
+                number: num,
+                name: sampleNames[idx] || ''
+            }));
+
+            const yesterday = getLocalDateString(-2);
+            const today = getLocalDateString(0);
+            const tomorrow = getLocalDateString(2);
+            const nowStr = getCurrentDateTimeString();
+
+            const hw1Records = {};
+            const hw2Records = {};
+            const hw3Records = {};
+
+            students.forEach((st, idx) => {
+                // 作業一（已逾期）：多數完成，少數逾期未交/待訂正
+                if (idx % 4 === 1) {
+                    hw1Records[st.id] = { status: 'unsubmitted', submittedAt: null, completedAt: null };
+                } else if (idx % 5 === 2) {
+                    hw1Records[st.id] = { status: 'correction', submittedAt: `${yesterday} 08:15`, completedAt: null };
+                } else {
+                    hw1Records[st.id] = { status: 'completed', submittedAt: `${yesterday} 08:10`, completedAt: `${yesterday} 12:30` };
+                }
+
+                // 作業二（今日截止）：部分完成、部分待訂正、部分未交
+                if (idx % 3 === 0) {
+                    hw2Records[st.id] = { status: 'completed', submittedAt: `${today} 07:50`, completedAt: nowStr };
+                } else if (idx % 3 === 1) {
+                    hw2Records[st.id] = { status: 'correction', submittedAt: `${today} 08:05`, completedAt: null };
+                } else {
+                    hw2Records[st.id] = { status: 'unsubmitted', submittedAt: null, completedAt: null };
+                }
+
+                // 作業三（後天截止）：剛派發
+                if (idx < 3) {
+                    hw3Records[st.id] = { status: 'completed', submittedAt: nowStr, completedAt: nowStr };
+                } else {
+                    hw3Records[st.id] = { status: 'unsubmitted', submittedAt: null, completedAt: null };
+                }
+            });
+
+            appState = {
+                students,
+                assignments: [
+                    { id: 'hw_demo_1', title: '國語習作第 4 課', dueDate: yesterday, records: hw1Records },
+                    { id: 'hw_demo_2', title: '數學習作 P.28~29', dueDate: today, records: hw2Records },
+                    { id: 'hw_demo_3', title: '自然學習單（植物觀察）', dueDate: tomorrow, records: hw3Records }
+                ],
+                archivedAssignments: appState.archivedAssignments || [],
+                settings: {
+                    hideCompletedInAssignments: false,
+                    hideAllDoneInSeats: false
+                }
+            };
+
+            saveStateToStorage();
+            closeSettingsModal();
+            renderApp();
+            showToast('已匯入範例資料（含 12 位跳號座號與 3 項作業）！');
+        }
+
+        // JSON 備份匯出與匯入
+        function exportBackupData() {
+            const dataStr = JSON.stringify(appState, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `班級作業備份_${referenceDate}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('JSON 備份檔已下載');
+        }
+
+        function importBackupData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (imported && Array.isArray(imported.students) && Array.isArray(imported.assignments)) {
+                        imported.assignments.forEach(hw => {
+                            if (!hw.records) hw.records = {};
+                            Object.keys(hw.records).forEach(stId => {
+                                hw.records[stId] = normalizeRecord(hw.records[stId]);
+                            });
+                        });
+                        if (!Array.isArray(imported.archivedAssignments)) {
+                            imported.archivedAssignments = [];
+                        }
+                        imported.archivedAssignments.forEach(hw => {
+                            if (!hw.records) hw.records = {};
+                            Object.keys(hw.records).forEach(stId => {
+                                hw.records[stId] = normalizeRecord(hw.records[stId]);
+                            });
+                        });
+                        appState = imported;
+                        saveStateToStorage();
+                        closeSettingsModal();
+                        renderApp();
+                        showToast('備份資料匯入成功！');
+                    } else {
+                        showToast('檔案格式不正確', 'error');
+                    }
+                } catch (err) {
+                    showToast('讀取檔案失敗，請確認是否為有效的 JSON 備份檔', 'error');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        function openResetBlankModal() {
+            document.getElementById('resetBlankConfirmModal').classList.remove('hidden');
+        }
+
+        function closeResetBlankModal() {
+            document.getElementById('resetBlankConfirmModal').classList.add('hidden');
+        }
+
+        function executeResetToBlank() {
+            appState = createBlankState();
+            saveStateToStorage();
+            closeResetBlankModal();
+            closeSettingsModal();
+            renderApp();
+            showToast('已清空所有資料並恢復為空白狀態');
+        }
+
+        // HTML 跳脫與 Toast 工具
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-[#B56C6A]' : (type === 'info' ? 'bg-[#6B7E8C]' : 'bg-[#68645D]');
+            toast.className = `${bgColor} text-[#FAF8F5] px-4 py-2.5 rounded-2xl shadow-lg text-xs sm:text-sm font-bold flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 2600);
+        }
+
+        // 初始化事件綁定
+        window.addEventListener('DOMContentLoaded', () => {
+            const dateInput = document.getElementById('currentDateInput');
+            dateInput.value = referenceDate;
+            dateInput.addEventListener('change', (e) => {
+                if (e.target.value) {
+                    referenceDate = e.target.value;
+                    renderApp();
+                }
+            });
+
+            document.getElementById('resetTodayBtn').addEventListener('click', () => {
+                referenceDate = getLocalDateString(0);
+                dateInput.value = referenceDate;
+                renderApp();
+                showToast('基準日已重設為今天');
+            });
+
+            document.getElementById('openSettingsModalBtn').addEventListener('click', openSettingsModal);
+
+            renderApp();
+        });
+    </script>
+</body>
+</html>
